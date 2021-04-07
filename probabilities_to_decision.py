@@ -43,6 +43,8 @@ class ImageNetProbabilitiesTo16ClassesMapping(ProbabilitiesToDecisionMapping):
                          (softmax output: all values should be
                          within [0,1])
         """
+        # ALEXA'S EDIT: changed this function so that it also returns probabilities
+        # for each of the 16 shape categories! (new_category_probs)
 
         self.check_input(probabilities)
         assert len(probabilities) == 1000
@@ -50,13 +52,20 @@ class ImageNetProbabilitiesTo16ClassesMapping(ProbabilitiesToDecisionMapping):
         max_value = -float("inf")
         category_decision = None
         c = hc.HumanCategories()
+
+        category_probs = [] # list of probabilities for each
+
         for category in hc.get_human_object_recognition_categories():
             indices = c.get_imagenet_indices_for_category(category)
             values = np.take(probabilities, indices)
+            category_probs.append(sum(values))
             aggregated_value = self.aggregation_function(values)
             if aggregated_value > max_value:
                 max_value = aggregated_value
                 category_decision = category
-   
-        return category_decision
+
+        total_category_probs = sum(category_probs)
+        new_category_probs = [x / total_category_probs for x in category_probs]
+
+        return category_decision, new_category_probs
 
