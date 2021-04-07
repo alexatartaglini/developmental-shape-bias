@@ -7,6 +7,7 @@ import os
 import numpy as np
 import shutil
 import probabilities_to_decision
+import helper.human_categories as sc
 import matplotlib.pyplot as plt
 
 def transform_data(path, batch):
@@ -19,7 +20,7 @@ def transform_data(path, batch):
 
     image_datasets = datasets.ImageFolder(path, preprocess)
     dataloaders = torch.utils.data.DataLoader(image_datasets, batch_size=batch,
-                                                    shuffle=True)
+                                                    shuffle=False)
     dataset_sizes = len(image_datasets)
 
     return dataloaders, dataset_sizes
@@ -27,7 +28,8 @@ def transform_data(path, batch):
 
 if __name__ == '__main__':
 
-    batch_size = 4
+    batch_size = 1
+    shape_categories = sc.get_human_object_recognition_categories() # list of 16 classes in the Geirhos style-transfer dataset
 
     # Load Emin's pretrained SAYCAM model from the .tar file. I'm using more or less
     # the same code that Emin uses in imagenet_finetuning.py
@@ -41,22 +43,27 @@ if __name__ == '__main__':
     model.module.fc = torch.nn.Linear(in_features=2048, out_features=1000, bias=True)
 
     # Process the images
-    images, size = transform_data('stimuli/style-transfer/', batch_size)
+    images, size = transform_data('stimuli-shape/style-transfer/', batch_size)
 
     # Obtain ImageNet - Geirhos mapping
     mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
     softmax = torch.nn.Softmax(dim=1)
 
-    # Pass the images through the model in batches of 4
+    # Pass the images through the model in batches of 1
     for i, (image_batch, target) in enumerate(images):
-        outputs = model(image_batch) # 4 1000-length tensors
-        soft_outputs = softmax(outputs)
+        output = model(image_batch) # 1 1000-length tensor
+        soft_outputs = softmax(output)
         decisions = []
 
         for j in range(batch_size):
             output = soft_outputs[j].detach().numpy()
-            decisions.append(mapping.probabilities_to_decision(output))
+            decision, probabilities = mapping.probabilities_to_decision(output)
+            decisions.append(decision)
 
-        print(decisions)
-        print(target)
+            #print("Category probabilities (16 Geirhos classes) for image " + str(i) + ": ")
+            #for k in range(len(shape_categories)):
+                #print(shape_categories[k] + ': ' + str(probabilities[k]))
+
+        print("decision: " + decision)
+        #print(target.item())
 
