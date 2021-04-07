@@ -9,6 +9,7 @@ import shutil
 import probabilities_to_decision
 import helper.human_categories as sc
 import matplotlib.pyplot as plt
+from dataloader import GeirhosStyleTransferDataset
 
 def transform_data(path, batch):
     # Using more or less the same preprocessing as Emin (but without center crop)
@@ -30,6 +31,8 @@ if __name__ == '__main__':
 
     batch_size = 1
     shape_categories = sc.get_human_object_recognition_categories() # list of 16 classes in the Geirhos style-transfer dataset
+    shape_dir = 'stimuli-shape/style-transfer'
+    texture_dir = 'stimuli-texture/style-transfer'
 
     # Load Emin's pretrained SAYCAM model from the .tar file. I'm using more or less
     # the same code that Emin uses in imagenet_finetuning.py
@@ -43,12 +46,28 @@ if __name__ == '__main__':
     model.module.fc = torch.nn.Linear(in_features=2048, out_features=1000, bias=True)
 
     # Process the images
-    images, size = transform_data('stimuli-shape/style-transfer/', batch_size)
+    #images, size = transform_data('stimuli-shape/style-transfer/', batch_size)
+
+    # Load and process the images
+    g = GeirhosStyleTransferDataset(shape_dir, texture_dir)
 
     # Obtain ImageNet - Geirhos mapping
     mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
     softmax = torch.nn.Softmax(dim=1)
 
+    # Pass images into the model one at a time
+    for i in range(g.__len__()):
+        im_dir, shape, texture, im = g.__getitem__(i)
+        im = im.reshape(1, 3, 224, 224)
+
+        output = model(im)
+        soft_output = softmax(output).detach().numpy().squeeze()
+
+        decision, class_values = mapping.probabilities_to_decision(soft_output)
+        print('decision for ' + im_dir + ': ' + decision)
+
+
+'''
     # Pass the images through the model in batches of 1
     for i, (image_batch, target) in enumerate(images):
         output = model(image_batch) # 1 1000-length tensor
@@ -66,4 +85,4 @@ if __name__ == '__main__':
 
         print("decision: " + decision)
         #print(target.item())
-
+'''

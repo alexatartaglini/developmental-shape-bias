@@ -56,7 +56,6 @@ class GeirhosStyleTransferDataset(Dataset):
 
         images = [key for key in self.shape_classes.keys()]
         image_dir = self.shape_dir + '/' + self.shape_classes[images[idx]] + '/' + images[idx]
-        print(image_dir)
         image = Image.open(image_dir)
 
         if self.transform:
