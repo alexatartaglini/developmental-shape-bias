@@ -58,14 +58,14 @@ class ImageNetProbabilitiesTo16ClassesMapping(ProbabilitiesToDecisionMapping):
         for category in hc.get_human_object_recognition_categories():
             indices = c.get_imagenet_indices_for_category(category)
             values = np.take(probabilities, indices)
-            category_probs.append(sum(values))
             aggregated_value = self.aggregation_function(values)
+            category_probs.append(aggregated_value)
             if aggregated_value > max_value:
                 max_value = aggregated_value
                 category_decision = category
 
-        total_category_probs = sum(category_probs)
-        new_category_probs = [x / total_category_probs for x in category_probs]
+        #total_category_probs = sum(category_probs)
+        #new_category_probs = [x / total_category_probs for x in category_probs]
 
-        return category_decision, new_category_probs
+        return category_decision, category_probs
 

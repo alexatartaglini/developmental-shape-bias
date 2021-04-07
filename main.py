@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     # Load Emin's pretrained SAYCAM model from the .tar file. I'm using more or less
     # the same code that Emin uses in imagenet_finetuning.py
-    model = models.resnext50_32x4d(pretrained=False)
+    model = models.resnext50_32x4d(pretrained=True)
     model.fc = torch.nn.Linear(in_features=2048, out_features=2765, bias=True)
     model = torch.nn.DataParallel(model) # What does this do?
     checkpoint = torch.load('models/resnext50_S.tar', map_location=torch.device('cpu'))
@@ -64,7 +64,11 @@ if __name__ == '__main__':
         soft_output = softmax(output).detach().numpy().squeeze()
 
         decision, class_values = mapping.probabilities_to_decision(soft_output)
+
         print('decision for ' + im_dir + ': ' + decision)
+        #for j in range(16):
+            #print(shape_categories[j] + ': ' + str(class_values[j]))
+        #print()
 
 
 '''
