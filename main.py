@@ -77,12 +77,22 @@ def plot_class_values(categories, class_values, im, shape, texture):
     plt.savefig('figures/' + im)
 
 
-def csv_class_values(shape_dict, shape_categories):
+def csv_class_values(shape_dict, shape_categories, csv_dir):
+    """Writes the shape category, texture category, and model decision for all
+    shape-texture combinations in a given Geirhos shape class to a CSV file.
+    Also includes whether or not neither the shape or texture classification is made.
+
+    :param shape_dict: a dictionary of values with shape category keys. Should
+        store the decision made and the class values for a given shape-image combination.
+    :param shape_categories: a list of all Geirhos shape classes.
+    :param csv_dir: directory for storing the CSV."""
+
     columns = ['Shape', 'Texture', 'Decision', 'Shape Category Value',
                'Texture Category Value', 'Decision Category Value',
                'Shape Decision', 'Texture Decision', 'Neither']
 
     for shape in shape_categories:
+        print(shape)
         df = pd.DataFrame(index=range(len(shape_categories)), columns=columns)
         df['Shape'] = shape
 
@@ -101,20 +111,36 @@ def csv_class_values(shape_dict, shape_categories):
             row['Texture Decision'] = int(decision == texture)
             row['Neither'] = int(decision != shape and decision != texture)
 
-        df.to_csv('csv/' + shape + '.csv', index=False)
+        df.to_csv(csv_dir + '/' + shape + '.csv', index=False)
 
 
-def calculate_totals(shape_categories):
+def calculate_totals(shape_categories, result_dir, verbose=False):
+    """Calculates the total number of shape, texture, and neither shape nor
+    texture decisions by Geirhos shape class (and overall). Stores these
+    results in a CSV and optionally prints them out.
+
+    :param shape_categories: a list of Geirhos shape classes.
+    :param result_dir: where to store the results.
+    :param verbose: True if you want to print the results as well as store them."""
+
     shape_dict = dict.fromkeys(shape_categories)
     texture_dict = dict.fromkeys(shape_categories)
     neither_dict = dict.fromkeys(shape_categories)
+
+    columns = ['Shape Category', 'Number Shape Decisions', 'Number Texture Decisions',
+               'Number Neither', 'Total Number Stimuli']
+    result_df = pd.DataFrame(columns=columns, index=range(len(shape_categories) + 1))
+
     for shape in shape_categories:
         shape_dict[shape] = 0
         texture_dict[shape] = 0
         neither_dict[shape] = 0
 
-    for filename in os.listdir('csv'):
-        df = pd.read_csv('csv/' + filename)
+    for filename in os.listdir(result_dir):
+        if filename[-4:] != '.csv' or filename == 'totals.csv':
+            continue
+
+        df = pd.read_csv(result_dir + '/' + filename)
         shape = df['Shape'][0]
         for i, row in df.iterrows():
             shape_dict[shape] = shape_dict[shape] + row['Shape Decision']
@@ -122,18 +148,69 @@ def calculate_totals(shape_categories):
             neither_dict[shape] += row['Neither']
 
     for shape in shape_categories:
-        print("Shape category: " + shape)
-        print("\tNumber shape decisions: " + str(shape_dict[shape]))
-        print("\tNumber texture decisions: " + str(texture_dict[shape]))
-        print("\tNumber neither shape nor texture decisions: " + str(neither_dict[shape]))
-        print()
+        if verbose:
+            print("Shape category: " + shape)
+            print("\tNumber shape decisions: " + str(shape_dict[shape]))
+            print("\tNumber texture decisions: " + str(texture_dict[shape]))
+            print("\tNumber neither shape nor texture decisions: " + str(neither_dict[shape]))
+            print()
 
-    print("IN TOTAL:")
-    print("\tNumber shape decisions: " + str(sum(shape_dict.values())))
-    print("\tNumber texture decisions: " + str(sum(texture_dict.values())))
-    print("\tNumber neither shape nor texture decisions: " + str(sum(neither_dict.values())))
+        shape_idx = shape_categories.index(shape)
+        result_df.at[shape_idx, 'Shape Category'] = shape
+        result_df.at[shape_idx, 'Number Shape Decisions'] = shape_dict[shape]
+        result_df.at[shape_idx, 'Number Texture Decisions'] = texture_dict[shape]
+        result_df.at[shape_idx, 'Number Neither'] = neither_dict[shape]
+        result_df.at[shape_idx, 'Total Number Stimuli'] = shape_dict[shape] + texture_dict[shape] +\
+                                                          neither_dict[shape]
+
+    if verbose:
+        print("IN TOTAL:")
+        print("\tNumber shape decisions: " + str(sum(shape_dict.values())))
+        print("\tNumber texture decisions: " + str(sum(texture_dict.values())))
+        print("\tNumber neither shape nor texture decisions: " + str(sum(neither_dict.values())))
+
+    idx = len(shape_categories)  # final row
+    result_df.at[idx, 'Shape Category'] = 'total'
+    result_df.at[idx, 'Number Shape Decisions'] = sum(shape_dict.values())
+    result_df.at[idx, 'Number Texture Decisions'] = sum(texture_dict.values())
+    result_df.at[idx, 'Number Neither'] = sum(neither_dict.values())
+    result_df.at[idx, 'Total Number Stimuli'] = sum(neither_dict.values()) + \
+                                                sum(texture_dict.values()) + sum(shape_dict.values())
+
+    result_df.to_csv(result_dir + '/totals.csv', index=False)
 
 
+def calculate_proportions(result_dir, verbose=False):
+    """Calculates the proportions of shape and texture decisions for a given model.
+    There are two proportions calculated for both shape and texture: 1) with neither
+    shape nor texture decisions included, and 2) without considering 'neither'
+    decisions. Stores these proportions in a text file and optionally prints them.
+
+    :param result_dir: the directory of the results for the model."""
+
+    df = pd.read_csv(result_dir + '/totals.csv')
+    row = df.loc[df['Shape Category'] == 'total']
+    shape = int(row['Number Shape Decisions'])
+    texture = int(row['Number Texture Decisions'])
+    total = int(row['Total Number Stimuli'])
+
+    shape_texture = shape / (shape + texture)
+    texture_shape = texture / (shape + texture)
+    shape_all = shape / total
+    texture_all = texture / total
+
+    strings = ["Proportion of shape decisions (disregarding 'neither' decisions): " + str(shape_texture),
+               "Proportion of texture decisions (disregarding 'neither' decisions): " + str(texture_shape),
+               "Proportion of shape decisions (including 'neither' decisions): " + str(shape_all),
+               "Proportion of shape decisions (including 'neither' decisions): " + str(texture_all)]
+    file = open(result_dir + '/proportions.txt', 'w')
+
+    for i in range(4):
+        file.write(strings[i] + '\n')
+        if verbose:
+            print(strings[i])
+
+    file.close()
 
 
 if __name__ == '__main__':
@@ -142,25 +219,27 @@ if __name__ == '__main__':
     shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
     shape_dir = 'stimuli-shape/style-transfer'
     texture_dir = 'stimuli-texture/style-transfer'
-    plot = False
+    plot = True
     verbose = True
 
-    '''
+    model_type = 'resnet50'  # 'saycam' or 'resnet50'
+
     shape_dict = dict.fromkeys(shape_categories)  # for storing the results
     shape_categories0 = [shape + '0' for shape in shape_categories]
     shape_dict0 = dict.fromkeys(shape_categories0)
     for shape in shape_categories:
         shape_dict[shape] = shape_dict0
 
-    shape_dict['airplane']['airplane'] = 0
-
-    # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
-    model = models.resnext50_32x4d(pretrained=True)
-    model.fc = torch.nn.Linear(in_features=2048, out_features=1000, bias=True)
-    model = torch.nn.DataParallel(model)
-    checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
-                            map_location=torch.device('cpu'))
-    model.load_state_dict(checkpoint['model_state_dict'])
+    if model_type == 'saycam':
+        # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
+        model = models.resnext50_32x4d(pretrained=True)
+        model.fc = torch.nn.Linear(in_features=2048, out_features=1000, bias=True)
+        model = torch.nn.DataParallel(model)
+        checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
+                                map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'])
+    elif model_type == 'resnet50':
+        model = models.resnet50(pretrained=True)
 
     # Load and process the images using my custom Geirhos style transfer dataset class
     g = GeirhosStyleTransferDataset(shape_dir, texture_dir)
@@ -180,15 +259,13 @@ if __name__ == '__main__':
         decision, class_values = mapping.probabilities_to_decision(soft_output)
 
         if verbose:
-            print('decision for ' + im_dir + ': ' + decision)
-            # for j in range(16):
-            # print(shape_categories[j] + ': ' + str(class_values[j]))
-            # print()
+            print('Decision for ' + im_dir + ': ' + decision)
         if plot:
             plot_class_values(shape_categories, class_values, im_dir, shape, texture)
 
         shape_dict[shape][texture + '0'] = [decision, class_values]
 
-    '''
-    #csv_class_values(shape_dict, shape_categories)
-    calculate_totals(shape_categories)
+    csv_class_values(shape_dict, shape_categories, 'results/' + model_type)
+    calculate_totals(shape_categories, 'results/' + model_type, verbose)
+    calculate_proportions('results/' + model_type, verbose)
+
