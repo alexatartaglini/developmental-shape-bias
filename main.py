@@ -1,11 +1,10 @@
 import torch
-import torchvision.models as models
 from torchvision import datasets, transforms, models
 import PIL
 import copy
 import os
 import numpy as np
-import shutil
+import argparse
 import pandas as pd
 import probabilities_to_decision
 import helper.human_categories as sc
@@ -214,6 +213,16 @@ def calculate_proportions(result_dir, verbose=False):
 
 
 if __name__ == '__main__':
+    """Passes images one at a time through a given model and stores/plots the results
+    (the shape/texture of the image, the classification made, and whether or not
+    the classifcation was a shape classification, a texture classification, or neither.)
+    
+    By default, the model is the SAYCAM-trained resnext model, and the dataset is the
+    Geirhos ImageNet style-transfer dataset. These options can be changed when running
+    this program in the terminal by using the -m and -d flags."""
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-m', '--model', help='Example: saycam, resnet50', required=False, default='saycam')
 
     batch_size = 1
     shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
@@ -264,6 +273,11 @@ if __name__ == '__main__':
             plot_class_values(shape_categories, class_values, im_dir, shape, texture)
 
         shape_dict[shape][texture + '0'] = [decision, class_values]
+
+    try:
+        os.mkdir('results/' + model_type)
+    except:
+        pass
 
     csv_class_values(shape_dict, shape_categories, 'results/' + model_type)
     calculate_totals(shape_categories, 'results/' + model_type, verbose)
