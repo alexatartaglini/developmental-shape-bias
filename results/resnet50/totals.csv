@@ -1,18 +1,18 @@
-Shape Category,Number Shape Decisions,Number Texture Decisions,Number Neither,Total Number Stimuli
-airplane,0,1,15,16
-bear,0,1,15,16
-bicycle,0,1,15,16
-bird,0,1,15,16
-boat,0,1,15,16
-bottle,16,1,0,17
-car,0,1,15,16
-cat,0,1,15,16
-chair,0,1,15,16
-clock,0,1,15,16
-dog,0,1,15,16
-elephant,0,1,15,16
-keyboard,0,1,15,16
-knife,0,1,15,16
-oven,0,1,15,16
-truck,0,1,15,16
-total,16,16,225,257
+Shape Category,Number Shape Decisions,Number Texture Decisions,Number Neither,Number Restricted Shape Decisions,Number Restricted Texture Decisions,Total Number Stimuli
+airplane,0,1,15,0,16,16
+bear,0,1,16,1,16,17
+bicycle,0,0,18,10,8,18
+bird,0,1,17,2,16,18
+boat,0,4,13,1,16,17
+bottle,18,0,0,18,0,18
+car,0,0,15,6,9,15
+cat,0,1,15,15,1,16
+chair,0,0,15,11,4,15
+clock,6,1,8,14,1,15
+dog,0,1,16,13,4,17
+elephant,0,1,17,5,13,18
+keyboard,0,1,16,10,7,17
+knife,0,1,15,14,2,16
+oven,0,2,14,13,3,16
+truck,0,0,18,8,10,18
+total,24,15,228,141,126,267

@@ -13,7 +13,7 @@ from matplotlib import cm
 from dataloader import GeirhosStyleTransferDataset
 
 
-def plot_class_values(categories, class_values, im, shape, texture):
+def plot_class_values(categories, class_values, im, shape, texture, model_type):
     """This function plots the values that the model assigns to the Geirhos
     Style Transfer classes (airplane, bear, ..., oven, truck; 16 total).
 
@@ -73,42 +73,58 @@ def plot_class_values(categories, class_values, im, shape, texture):
     im_ax.set_xticks([])
     im_ax.set_yticks([])
 
-    plt.savefig('figures/' + im)
+    plt.savefig('figures/' + model_type + '/' + im)
 
 
-def csv_class_values(shape_dict, shape_categories, csv_dir):
+def csv_class_values(shape_dict, shape_categories, shape_spec_dict, csv_dir):
     """Writes the shape category, texture category, and model decision for all
     shape-texture combinations in a given Geirhos shape class to a CSV file.
     Also includes whether or not neither the shape or texture classification is made.
 
     :param shape_dict: a dictionary of values with shape category keys. Should
-        store the decision made and the class values for a given shape-image combination.
+        store the decision made, the length 16 vector of class values for a
+        given shape-image combination, and the decision made when restricted to
+        only the shape and texture categories.
     :param shape_categories: a list of all Geirhos shape classes.
+    :param shape_spec_dict: a shape-indexed dictionary of lists, each containing
+        the specific textures for a given shape (eg. clock1, oven2, instead of
+        just clock, oven, etc). This ensures that results for clock1 and clock2
+        for example do not overwrite each other.
     :param csv_dir: directory for storing the CSV."""
 
-    columns = ['Shape', 'Texture', 'Decision', 'Shape Category Value',
-               'Texture Category Value', 'Decision Category Value',
-               'Shape Decision', 'Texture Decision', 'Neither']
+    columns = ['Shape', 'Texture', 'Decision', 'Shape Category Value', 'Texture Category Value',
+               'Decision Category Value', 'Shape Decision', 'Texture Decision', 'Neither',
+               'Restricted Decision', 'Restriced Shape Value', 'Restricted Texture Value',
+               'Restricted Shape Decision', 'Restricted Texture Decision']
 
     for shape in shape_categories:
-        print(shape)
-        df = pd.DataFrame(index=range(len(shape_categories)), columns=columns)
+        specific_textures = shape_spec_dict[shape]
+        df = pd.DataFrame(index=range(len(specific_textures)), columns=columns)
         df['Shape'] = shape
 
         for i, row in df.iterrows():
-            texture = shape_categories[i]
+            texture = specific_textures[i]
             decision = shape_dict[shape][texture + '0'][0]
             class_values = shape_dict[shape][texture + '0'][1]
+            decision_restricted = shape_dict[shape][texture + '0'][2]
+            restricted_class_values = shape_dict[shape][texture + '0'][3]
 
             row['Texture'] = texture
             row['Decision'] = decision
             row['Shape Category Value'] = class_values[shape_categories.index(shape)]
-            row['Texture Category Value'] = class_values[shape_categories.index(texture)]
+            row['Texture Category Value'] = class_values[shape_categories.index(texture[:-1:])]
             row['Decision Category Value'] = class_values[shape_categories.index(decision)]
 
             row['Shape Decision'] = int(decision == shape)
-            row['Texture Decision'] = int(decision == texture)
-            row['Neither'] = int(decision != shape and decision != texture)
+            row['Texture Decision'] = int(decision == texture[:-1:])
+            row['Neither'] = int(decision != shape and decision != texture[:-1:])
+
+            row['Restricted Decision'] = decision_restricted
+            row['Restricted Shape Decision'] = int(shape == decision_restricted)
+
+            row['Restricted Texture Decision'] = int(texture[:-1:] == decision_restricted)
+            row['Restricted Shape Value'] = restricted_class_values[0]
+            row['Restricted Texture Value'] = restricted_class_values[1]
 
         df.to_csv(csv_dir + '/' + shape + '.csv', index=False)
 
@@ -125,15 +141,20 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
     shape_dict = dict.fromkeys(shape_categories)
     texture_dict = dict.fromkeys(shape_categories)
     neither_dict = dict.fromkeys(shape_categories)
+    restricted_shape_dict = dict.fromkeys(shape_categories)
+    restricted_texture_dict = dict.fromkeys(shape_categories)
 
     columns = ['Shape Category', 'Number Shape Decisions', 'Number Texture Decisions',
-               'Number Neither', 'Total Number Stimuli']
+               'Number Neither', 'Number Restricted Shape Decisions',
+               'Number Restricted Texture Decisions', 'Total Number Stimuli']
     result_df = pd.DataFrame(columns=columns, index=range(len(shape_categories) + 1))
 
     for shape in shape_categories:
         shape_dict[shape] = 0
         texture_dict[shape] = 0
         neither_dict[shape] = 0
+        restricted_shape_dict[shape] = 0
+        restricted_texture_dict[shape] = 0
 
     for filename in os.listdir(result_dir):
         if filename[-4:] != '.csv' or filename == 'totals.csv':
@@ -142,9 +163,12 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
         df = pd.read_csv(result_dir + '/' + filename)
         shape = df['Shape'][0]
         for i, row in df.iterrows():
-            shape_dict[shape] = shape_dict[shape] + row['Shape Decision']
-            texture_dict[shape] += row['Texture Decision']
-            neither_dict[shape] += row['Neither']
+            if row['Restricted Shape Decision'] != row['Restricted Texture Decision']:
+                shape_dict[shape] = shape_dict[shape] + row['Shape Decision']
+                texture_dict[shape] += row['Texture Decision']
+                neither_dict[shape] += row['Neither']
+                restricted_shape_dict[shape] += row['Restricted Shape Decision']
+                restricted_texture_dict[shape] += row['Restricted Texture Decision']
 
     for shape in shape_categories:
         if verbose:
@@ -152,6 +176,11 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
             print("\tNumber shape decisions: " + str(shape_dict[shape]))
             print("\tNumber texture decisions: " + str(texture_dict[shape]))
             print("\tNumber neither shape nor texture decisions: " + str(neither_dict[shape]))
+            print("\t---------------------------------------------")
+            print("\tNumber shape decisions (restricted to only shape/texture classes): "
+                  + str(restricted_shape_dict[shape]))
+            print("\tNumber texture decisions (restricted to only shape/texture classes): "
+                  + str(restricted_texture_dict[shape]))
             print()
 
         shape_idx = shape_categories.index(shape)
@@ -159,6 +188,8 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
         result_df.at[shape_idx, 'Number Shape Decisions'] = shape_dict[shape]
         result_df.at[shape_idx, 'Number Texture Decisions'] = texture_dict[shape]
         result_df.at[shape_idx, 'Number Neither'] = neither_dict[shape]
+        result_df.at[shape_idx, 'Number Restricted Shape Decisions'] = restricted_shape_dict[shape]
+        result_df.at[shape_idx, 'Number Restricted Texture Decisions'] = restricted_texture_dict[shape]
         result_df.at[shape_idx, 'Total Number Stimuli'] = shape_dict[shape] + texture_dict[shape] +\
                                                           neither_dict[shape]
 
@@ -167,6 +198,12 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
         print("\tNumber shape decisions: " + str(sum(shape_dict.values())))
         print("\tNumber texture decisions: " + str(sum(texture_dict.values())))
         print("\tNumber neither shape nor texture decisions: " + str(sum(neither_dict.values())))
+        print("\t---------------------------------------------")
+        print("\tNumber shape decisions (restricted to only shape/texture classes): "
+              + str(sum(restricted_shape_dict.values())))
+        print("\tNumber texture decisions (restricted to only shape/texture classes): "
+              + str(sum(restricted_texture_dict.values())))
+        print()
 
     idx = len(shape_categories)  # final row
     result_df.at[idx, 'Shape Category'] = 'total'
@@ -175,6 +212,8 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
     result_df.at[idx, 'Number Neither'] = sum(neither_dict.values())
     result_df.at[idx, 'Total Number Stimuli'] = sum(neither_dict.values()) + \
                                                 sum(texture_dict.values()) + sum(shape_dict.values())
+    result_df.at[idx, 'Number Restricted Shape Decisions'] = sum(restricted_shape_dict.values())
+    result_df.at[idx, 'Number Restricted Texture Decisions'] = sum(restricted_texture_dict.values())
 
     result_df.to_csv(result_dir + '/totals.csv', index=False)
 
@@ -193,6 +232,9 @@ def calculate_proportions(result_dir, verbose=False):
     texture = int(row['Number Texture Decisions'])
     total = int(row['Total Number Stimuli'])
 
+    shape_restricted = int(row['Number Restricted Shape Decisions']) / total
+    texture_restricted = int(row['Number Restricted Texture Decisions']) / total
+
     shape_texture = shape / (shape + texture)
     texture_shape = texture / (shape + texture)
     shape_all = shape / total
@@ -201,10 +243,12 @@ def calculate_proportions(result_dir, verbose=False):
     strings = ["Proportion of shape decisions (disregarding 'neither' decisions): " + str(shape_texture),
                "Proportion of texture decisions (disregarding 'neither' decisions): " + str(texture_shape),
                "Proportion of shape decisions (including 'neither' decisions): " + str(shape_all),
-               "Proportion of shape decisions (including 'neither' decisions): " + str(texture_all)]
+               "Proportion of texture decisions (including 'neither' decisions): " + str(texture_all),
+               "Proportion of shape decisions (restricted to only shape/texture classes): " + str(shape_restricted),
+               "Proportion of texture decisions (restricted to only shape/texture classes): " + str(texture_restricted)]
     file = open(result_dir + '/proportions.txt', 'w')
 
-    for i in range(4):
+    for i in range(len(strings)):
         file.write(strings[i] + '\n')
         if verbose:
             print(strings[i])
@@ -223,21 +267,37 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model', help='Example: saycam, resnet50', required=False, default='saycam')
+    parser.add_argument('-v', '--verbose', help='Prints results.', required=False, action='store_true')
+    parser.add_argument('-p', '--plot', help='Plots results.', required=False, action='store_true')
+    args = parser.parse_args()
 
     batch_size = 1
     shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
     shape_dir = 'stimuli-shape/style-transfer'
     texture_dir = 'stimuli-texture/style-transfer'
-    plot = True
-    verbose = True
+    plot = args.plot
+    verbose = args.verbose
 
-    model_type = 'resnet50'  # 'saycam' or 'resnet50'
+    model_type = args.model  # 'saycam' or 'resnet50'
+
+    try:
+        os.mkdir('results/' + model_type)
+    except:
+        pass
+
+    try:
+        os.mkdir('figures/' + model_type)
+    except:
+        pass
 
     shape_dict = dict.fromkeys(shape_categories)  # for storing the results
     shape_categories0 = [shape + '0' for shape in shape_categories]
     shape_dict0 = dict.fromkeys(shape_categories0)
+
+    shape_spec_dict = dict.fromkeys(shape_categories)  # contains lists of specific textures for each shape
     for shape in shape_categories:
-        shape_dict[shape] = shape_dict0
+        shape_dict[shape] = shape_dict0.copy()
+        shape_spec_dict[shape] = []
 
     if model_type == 'saycam':
         # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
@@ -249,6 +309,10 @@ if __name__ == '__main__':
         model.load_state_dict(checkpoint['model_state_dict'])
     elif model_type == 'resnet50':
         model = models.resnet50(pretrained=True)
+    elif model_type == 'resnet18':
+        model = models.resnet18(pretrained=True)
+    elif model_type == 'vgg11':
+        model = models.resnet18(pretrained=True)
 
     # Load and process the images using my custom Geirhos style transfer dataset class
     g = GeirhosStyleTransferDataset(shape_dir, texture_dir)
@@ -256,10 +320,11 @@ if __name__ == '__main__':
     # Obtain ImageNet - Geirhos mapping
     mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
     softmax = torch.nn.Softmax(dim=1)
+    softmax2 = torch.nn.Softmax(dim=0)
 
     # Pass images into the model one at a time
     for i in range(g.__len__()):
-        im_dir, shape, texture, im = g.__getitem__(i)
+        im_dir, shape, texture, shape_spec, texture_spec, im = g.__getitem__(i)
         im = im.reshape(1, 3, 224, 224)
 
         output = model(im)
@@ -267,19 +332,27 @@ if __name__ == '__main__':
 
         decision, class_values = mapping.probabilities_to_decision(soft_output)
 
+        shape_idx = shape_categories.index(shape)
+        texture_idx = shape_categories.index(texture)
+        if class_values[shape_idx] > class_values[texture_idx]:
+            decision_idx = shape_idx
+        else:
+            decision_idx = texture_idx
+        decision_restricted = shape_categories[decision_idx]
+        restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
+        restricted_class_values = softmax2(restricted_class_values)
+
         if verbose:
             print('Decision for ' + im_dir + ': ' + decision)
+            print('\tRestricted decision: ' + decision_restricted)
         if plot:
-            plot_class_values(shape_categories, class_values, im_dir, shape, texture)
+            plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
 
-        shape_dict[shape][texture + '0'] = [decision, class_values]
+        shape_dict[shape][texture_spec + '0'] = [decision, class_values,
+                                            decision_restricted, restricted_class_values]
+        shape_spec_dict[shape].append(texture_spec)
 
-    try:
-        os.mkdir('results/' + model_type)
-    except:
-        pass
-
-    csv_class_values(shape_dict, shape_categories, 'results/' + model_type)
+    csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
     calculate_totals(shape_categories, 'results/' + model_type, verbose)
     calculate_proportions('results/' + model_type, verbose)
 

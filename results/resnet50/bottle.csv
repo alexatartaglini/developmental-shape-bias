@@ -1,17 +1,19 @@
-Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither
-bottle,airplane,bottle,0.0024598686,0.00014487766,0.0024598686,1,0,0
-bottle,bear,bottle,0.0023377314,0.0003134998,0.0023377314,1,0,0
-bottle,bicycle,bottle,0.0021818362,0.0008374792,0.0021818362,1,0,0
-bottle,bird,bottle,0.0022914107,0.00036839978,0.0022914107,1,0,0
-bottle,boat,bottle,0.0023495916,0.00044715317,0.0023495916,1,0,0
-bottle,bottle,bottle,0.0022711966,0.0022711966,0.0022711966,1,1,0
-bottle,car,bottle,0.0022340126,0.000531368,0.0022340126,1,0,0
-bottle,cat,bottle,0.002236612,0.00125637,0.002236612,1,0,0
-bottle,chair,bottle,0.0023459161,0.001183131,0.0023459161,1,0,0
-bottle,clock,bottle,0.002377662,0.0019657293,0.002377662,1,0,0
-bottle,dog,bottle,0.0022771468,0.0010616648,0.0022771468,1,0,0
-bottle,elephant,bottle,0.0023021407,0.00043159473,0.0023021407,1,0,0
-bottle,keyboard,bottle,0.0025002284,0.00095563306,0.0025002284,1,0,0
-bottle,knife,bottle,0.002390169,0.0017252071,0.002390169,1,0,0
-bottle,oven,bottle,0.002350426,0.0013360544,0.002350426,1,0,0
-bottle,truck,bottle,0.0022253154,0.0005321019,0.0022253154,1,0,0
+Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither,Restricted Decision,Restriced Shape Value,Restricted Texture Value,Restricted Shape Decision,Restricted Texture Decision
+bottle,bear1,bottle,0.002271587,0.00031124282,0.002271587,1,0,0,bottle,,,1,0
+bottle,cat3,bottle,0.0023194684,0.0014252056,0.0023194684,1,0,0,bottle,,,1,0
+bottle,clock1,bottle,0.0023471022,0.0018978367,0.0023471022,1,0,0,bottle,,,1,0
+bottle,boat3,bottle,0.0021118352,0.00038659506,0.0021118352,1,0,0,bottle,,,1,0
+bottle,dog1,bottle,0.0024973757,0.0010609264,0.0024973757,1,0,0,bottle,,,1,0
+bottle,car2,bottle,0.0023578953,0.00050719915,0.0023578953,1,0,0,bottle,,,1,0
+bottle,bear2,bottle,0.0025916563,0.0003436712,0.0025916563,1,0,0,bottle,,,1,0
+bottle,bicycle3,bottle,0.0022905266,0.00071066065,0.0022905266,1,0,0,bottle,,,1,0
+bottle,dog2,bottle,0.0023745648,0.0010404247,0.0023745648,1,0,0,bottle,,,1,0
+bottle,airplane1,bottle,0.0024884413,0.00013635033,0.0024884413,1,0,0,bottle,,,1,0
+bottle,cat1,bottle,0.002276588,0.0013228386,0.002276588,1,0,0,bottle,,,1,0
+bottle,knife1,bottle,0.0024878285,0.0016750689,0.0024878285,1,0,0,bottle,,,1,0
+bottle,chair2,bottle,0.0023246047,0.0011518729,0.0023246047,1,0,0,bottle,,,1,0
+bottle,boat3,bottle,0.0021118352,0.00038659506,0.0021118352,1,0,0,bottle,,,1,0
+bottle,clock1,bottle,0.0023471022,0.0018978367,0.0023471022,1,0,0,bottle,,,1,0
+bottle,bird1,bottle,0.002372239,0.00038646022,0.002372239,1,0,0,bottle,,,1,0
+bottle,keyboard3,bottle,0.0023328732,0.0008824795,0.0023328732,1,0,0,bottle,,,1,0
+bottle,knife1,bottle,0.0024878285,0.0016750689,0.0024878285,1,0,0,bottle,,,1,0

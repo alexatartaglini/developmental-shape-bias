@@ -1,0 +1,19 @@
+Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither,Restricted Decision,Restriced Shape Value,Restricted Texture Value,Restricted Shape Decision,Restricted Texture Decision
+dog,bear1,knife,0.0018080788,0.00010197124,0.0026780458,0,0,1,dog,,,1,0
+dog,bird1,bottle,0.0014086145,0.0002569626,0.0020114223,0,0,1,dog,,,1,0
+dog,airplane1,knife,0.0012754443,1.6561056e-05,0.0026439596,0,0,1,dog,,,1,0
+dog,elephant1,bottle,0.0014632439,0.00012301169,0.0027590424,0,0,1,dog,,,1,0
+dog,bird2,knife,0.0017458106,0.00016183773,0.0025394354,0,0,1,dog,,,1,0
+dog,boat1,knife,0.0015097659,4.7470876e-05,0.0021774224,0,0,1,dog,,,1,0
+dog,elephant2,bottle,0.0014359537,0.00019750462,0.0018381263,0,0,1,dog,,,1,0
+dog,truck2,dog,0.0022819338,5.8983227e-05,0.0022819338,1,0,0,dog,,,1,0
+dog,bear3,bottle,0.0016804311,8.3863604e-05,0.001946238,0,0,1,dog,,,1,0
+dog,car3,knife,0.0015437433,4.398098e-05,0.0021310048,0,0,1,dog,,,1,0
+dog,truck2,dog,0.0022819338,5.8983227e-05,0.0022819338,1,0,0,dog,,,1,0
+dog,boat3,bottle,0.0020323026,6.259592e-05,0.002510477,0,0,1,dog,,,1,0
+dog,clock2,knife,0.0018648511,0.00044882158,0.0049461797,0,0,1,dog,,,1,0
+dog,dog3,bottle,0.001742882,0.001742882,0.0022886223,0,0,1,dog,,,1,1
+dog,oven3,knife,0.001494021,0.0009236933,0.0026854218,0,0,1,dog,,,1,0
+dog,airplane3,knife,0.0019828365,5.130238e-06,0.0021074736,0,0,1,dog,,,1,0
+dog,bottle1,knife,0.0012893098,0.0019326629,0.007479569,0,0,1,bottle,,,0,1
+dog,chair2,bottle,0.0016094045,0.0004984591,0.002921535,0,0,1,dog,,,1,0

@@ -1,0 +1,19 @@
+Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither,Restricted Decision,Restriced Shape Value,Restricted Texture Value,Restricted Shape Decision,Restricted Texture Decision
+car,airplane1,knife,5.509239e-05,1.4571627e-05,0.0031334043,0,0,1,car,,,1,0
+car,clock2,knife,8.604376e-05,0.00037796065,0.0034582089,0,0,1,clock,,,0,1
+car,oven3,knife,7.804098e-05,0.0014990368,0.0024367739,0,0,1,oven,,,0,1
+car,car1,knife,4.3682783e-05,4.3682783e-05,0.002435699,0,0,1,car,,,1,1
+car,elephant2,knife,5.4549484e-05,0.00013936964,0.004333575,0,0,1,elephant,,,0,1
+car,chair1,knife,3.2718068e-05,0.00041662177,0.0062939213,0,0,1,chair,,,0,1
+car,airplane3,knife,5.753968e-05,2.6938494e-06,0.0028364712,0,0,1,car,,,1,0
+car,bird2,knife,9.094327e-05,0.0002552101,0.0023303533,0,0,1,bird,,,0,1
+car,car2,knife,4.0753206e-05,4.0753206e-05,0.0041953563,0,0,1,car,,,1,1
+car,oven2,knife,5.999923e-05,0.0005674202,0.003037322,0,0,1,oven,,,0,1
+car,oven2,knife,5.999923e-05,0.0005674202,0.003037322,0,0,1,oven,,,0,1
+car,elephant3,bottle,8.054698e-05,5.7814614e-05,0.0026014228,0,0,1,car,,,1,0
+car,airplane2,knife,3.1270934e-05,3.6366112e-06,0.0046156966,0,0,1,car,,,1,0
+car,car1,knife,4.3682783e-05,4.3682783e-05,0.002435699,0,0,1,car,,,1,1
+car,keyboard3,knife,0.00010150686,9.532283e-05,0.0032441153,0,0,1,car,,,1,0
+car,knife2,bottle,6.4749634e-05,0.0021984736,0.0022938251,0,0,1,knife,,,0,1
+car,bicycle2,dog,5.5630993e-05,0.00014224903,0.0018647887,0,0,1,bicycle,,,0,1
+car,truck3,knife,0.00010550189,9.2554736e-05,0.0023140996,0,0,1,car,,,1,0

@@ -1,0 +1,19 @@
+Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither,Restricted Decision,Restriced Shape Value,Restricted Texture Value,Restricted Shape Decision,Restricted Texture Decision
+clock,clock2,knife,0.0006074743,0.0006074743,0.0034506633,0,0,1,clock,,,1,1
+clock,boat2,knife,0.00040011574,6.5554515e-05,0.0036602046,0,0,1,clock,,,1,0
+clock,clock3,knife,0.0006897045,0.0006897045,0.004188403,0,0,1,clock,,,1,1
+clock,bicycle1,knife,0.0008251445,0.00011239792,0.004494822,0,0,1,clock,,,1,0
+clock,bottle3,bottle,0.0011579817,0.003861455,0.003861455,0,1,0,bottle,,,0,1
+clock,dog1,bottle,0.00073979655,0.0015034957,0.0033971271,0,0,1,dog,,,0,1
+clock,elephant2,bottle,0.001432832,0.00012725685,0.002344113,0,0,1,clock,,,1,0
+clock,bear3,bottle,0.0009961056,8.858521e-05,0.002406191,0,0,1,clock,,,1,0
+clock,cat1,bottle,0.0008252803,0.0011678316,0.0023984888,0,0,1,cat,,,0,1
+clock,keyboard3,knife,0.0007710312,0.00016494718,0.0033118983,0,0,1,clock,,,1,0
+clock,knife1,knife,0.0008227474,0.003328741,0.003328741,0,1,0,knife,,,0,1
+clock,bicycle1,knife,0.0008251445,0.00011239792,0.004494822,0,0,1,clock,,,1,0
+clock,bicycle1,knife,0.0008251445,0.00011239792,0.004494822,0,0,1,clock,,,1,0
+clock,clock2,knife,0.0006074743,0.0006074743,0.0034506633,0,0,1,clock,,,1,1
+clock,bottle2,bottle,0.0014355845,0.0032599238,0.0032599238,0,1,0,bottle,,,0,1
+clock,car1,knife,0.0018492229,4.3319287e-05,0.0044351406,0,0,1,clock,,,1,0
+clock,airplane2,bottle,0.000649049,4.8656395e-05,0.0021103807,0,0,1,clock,,,1,0
+clock,bear2,bottle,0.00068027293,0.00013782679,0.0027578932,0,0,1,clock,,,1,0

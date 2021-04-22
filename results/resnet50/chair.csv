@@ -1,17 +1,19 @@
-Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither
-chair,airplane,bottle,0.0011577916,0.00014487766,0.0024598686,0,0,1
-chair,bear,bottle,0.0011146241,0.0003134998,0.0023377314,0,0,1
-chair,bicycle,bottle,0.0010825961,0.0008374792,0.0021818362,0,0,1
-chair,bird,bottle,0.0010871006,0.00036839978,0.0022914107,0,0,1
-chair,boat,bottle,0.0011992833,0.00044715317,0.0023495916,0,0,1
-chair,bottle,bottle,0.0011501138,0.0022711966,0.0022711966,0,1,0
-chair,car,bottle,0.0012387929,0.000531368,0.0022340126,0,0,1
-chair,cat,bottle,0.0010966442,0.00125637,0.002236612,0,0,1
-chair,chair,bottle,0.001183131,0.001183131,0.0023459161,0,0,1
-chair,clock,bottle,0.0011438837,0.0019657293,0.002377662,0,0,1
-chair,dog,bottle,0.0011789935,0.0010616648,0.0022771468,0,0,1
-chair,elephant,bottle,0.0011247501,0.00043159473,0.0023021407,0,0,1
-chair,keyboard,bottle,0.0012075666,0.00095563306,0.0025002284,0,0,1
-chair,knife,bottle,0.0012656145,0.0017252071,0.002390169,0,0,1
-chair,oven,bottle,0.001194689,0.0013360544,0.002350426,0,0,1
-chair,truck,bottle,0.0011409894,0.0005321019,0.0022253154,0,0,1
+Shape,Texture,Decision,Shape Category Value,Texture Category Value,Decision Category Value,Shape Decision,Texture Decision,Neither,Restricted Decision,Restriced Shape Value,Restricted Texture Value,Restricted Shape Decision,Restricted Texture Decision
+chair,clock2,bottle,0.001161741,0.0021121998,0.0023975077,0,0,1,clock,,,0,1
+chair,truck3,bottle,0.0013927256,0.0005109963,0.0023571928,0,0,1,chair,,,1,0
+chair,clock1,bottle,0.0013265145,0.0019048391,0.0023195574,0,0,1,clock,,,0,1
+chair,dog2,bottle,0.0012140697,0.0010401271,0.002389821,0,0,1,chair,,,1,0
+chair,chair3,bottle,0.0012160196,0.0012160196,0.0023746614,0,0,1,chair,,,1,1
+chair,keyboard2,bottle,0.0013108293,0.00086260645,0.0025784078,0,0,1,chair,,,1,0
+chair,oven2,bottle,0.0011921283,0.0012197933,0.0023024671,0,0,1,oven,,,0,1
+chair,bicycle1,bottle,0.001283281,0.0007288584,0.002168955,0,0,1,chair,,,1,0
+chair,bird1,bottle,0.0011750046,0.00040479115,0.0023115347,0,0,1,chair,,,1,0
+chair,truck3,bottle,0.0013927256,0.0005109963,0.0023571928,0,0,1,chair,,,1,0
+chair,bird2,bottle,0.0012019011,0.0004052161,0.0022628515,0,0,1,chair,,,1,0
+chair,chair1,bottle,0.0011859932,0.0011859932,0.0024203632,0,0,1,chair,,,1,1
+chair,clock3,bottle,0.0012371958,0.0019333813,0.0021321243,0,0,1,clock,,,0,1
+chair,truck3,bottle,0.0013927256,0.0005109963,0.0023571928,0,0,1,chair,,,1,0
+chair,bear1,bottle,0.0011604457,0.0003098251,0.0020850732,0,0,1,chair,,,1,0
+chair,chair3,bottle,0.0012160196,0.0012160196,0.0023746614,0,0,1,chair,,,1,1
+chair,boat2,bottle,0.0012781605,0.00036038266,0.002304992,0,0,1,chair,,,1,0
+chair,keyboard2,bottle,0.0013108293,0.00086260645,0.0025784078,0,0,1,chair,,,1,0

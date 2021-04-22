@@ -40,6 +40,9 @@ class GeirhosStyleTransferDataset(Dataset):
                 for image in sorted(os.listdir(texture_dir + '/' + category)):
                     self.texture_classes[image] = category
 
+        if '.DS_Store' in self.shape_classes.keys():
+            self.shape_classes.pop('.DS_Store')
+
     def __len__(self):
         """
         :return: the number of images in the style transfer dataset.
@@ -51,7 +54,8 @@ class GeirhosStyleTransferDataset(Dataset):
         """
         :param idx: the index of the image to be accessed
         :return: a tuple with the name of the idx_th image, its shape category, its texture
-            category, and the image itself with transforms applied
+            category, its specific shape, specific texture, and the image itself with
+            transforms applied
         """
 
         images = [key for key in self.shape_classes.keys()]
@@ -64,4 +68,8 @@ class GeirhosStyleTransferDataset(Dataset):
         shape = self.shape_classes[images[idx]]
         texture = self.texture_classes[images[idx]]
 
-        return images[idx], shape, texture, image
+        spec = images[idx][:-4:].split('-')
+        shape_spec = spec[0]  # Specific shape, eg. airplane1
+        texture_spec = spec[1]  # Specific texture, eg. clock2
+
+        return images[idx], shape, texture, shape_spec, texture_spec, image
