@@ -327,7 +327,7 @@ if __name__ == '__main__':
 
     # Pass images into the model one at a time
     for i in range(g.__len__()):
-        im_dir, shape, texture, shape_spec, texture_spec, im = g.__getitem__(i)
+        im, im_dir, shape, texture, shape_spec, texture_spec = g.__getitem__(i)
         im = im.reshape(1, 3, 224, 224)
 
         output = model(im)

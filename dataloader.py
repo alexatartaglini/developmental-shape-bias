@@ -54,14 +54,16 @@ class GeirhosStyleTransferDataset(Dataset):
     def __getitem__(self, idx):
         """
         :param idx: the index of the image to be accessed
-        :return: a tuple with the name of the idx_th image, its shape category, its texture
-            category, its specific shape, specific texture, and the image itself with
-            transforms applied
+        :return: a tuple with the idx_th image itself with transforms applied, the name of the
+        idx_th image, its shape category, its texture category, its specific shape,
+        specific texture.
         """
 
         images = [key for key in self.shape_classes.keys()]
         image_dir = self.shape_dir + '/' + self.shape_classes[images[idx]] + '/' + images[idx]
         image = Image.open(image_dir)
+
+        #image.show()
 
         if self.transform:
             image = self.transform(image)
@@ -73,7 +75,7 @@ class GeirhosStyleTransferDataset(Dataset):
         shape_spec = spec[0]  # Specific shape, eg. airplane1
         texture_spec = spec[1]  # Specific texture, eg. clock2
 
-        return images[idx], shape, texture, shape_spec, texture_spec, image
+        return image, images[idx], shape, texture, shape_spec, texture_spec
 
     def create_texture_dir(self, shape_dir, texture_dir):
         """Takes a dataset that is organized by shape category and copies
