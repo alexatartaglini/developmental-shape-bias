@@ -2,6 +2,7 @@ import os
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
+import shutil
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -73,3 +74,32 @@ class GeirhosStyleTransferDataset(Dataset):
         texture_spec = spec[1]  # Specific texture, eg. clock2
 
         return images[idx], shape, texture, shape_spec, texture_spec, image
+
+    def create_texture_dir(self, shape_dir, texture_dir):
+        """Takes a dataset that is organized by shape category and copies
+        images into folders organized by texture category.
+
+        :param shape_dir: the directory of the shape-based dataset.
+        :param texture_dir: name of the directory for the texture-based version."""
+
+        texture_path = texture_dir + '/' + shape_dir.split('/')[1]
+
+        try:
+            shutil.rmtree(texture_dir)
+            os.mkdir(texture_dir)
+            os.mkdir(texture_path)
+        except:
+            os.mkdir(texture_dir)
+            os.mkdir(texture_path)
+
+        for category in sorted(os.listdir(shape_dir)):
+            if category != '.DS_Store':
+                os.mkdir(texture_path + '/' + category)
+
+        for category in sorted(os.listdir(shape_dir)):
+            if category != '.DS_Store':
+                for image in sorted(os.listdir(shape_dir + '/' + category)):
+                    texture = image.replace('.png','').split('-')[1]
+                    texture = ''.join([i for i in texture if not i.isdigit()])
+
+                    shutil.copyfile(shape_dir + '/' + category + '/' + image, texture_path + '/' + texture + '/' + image)

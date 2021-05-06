@@ -316,6 +316,9 @@ if __name__ == '__main__':
 
     # Load and process the images using my custom Geirhos style transfer dataset class
     g = GeirhosStyleTransferDataset(shape_dir, texture_dir)
+    if not os.path.isdir('stimuli-texture'):
+        g.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
+
 
     # Obtain ImageNet - Geirhos mapping
     mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
@@ -355,4 +358,3 @@ if __name__ == '__main__':
     csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
     calculate_totals(shape_categories, 'results/' + model_type, verbose)
     calculate_proportions('results/' + model_type, verbose)
-
