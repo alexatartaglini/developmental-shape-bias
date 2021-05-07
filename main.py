@@ -1,5 +1,7 @@
 import torch
+import torch.nn as nn
 from torchvision import datasets, transforms, models
+from torch.utils.data import DataLoader
 import PIL
 import copy
 import os
@@ -10,7 +12,7 @@ import probabilities_to_decision
 import helper.human_categories as sc
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from dataloader import GeirhosStyleTransferDataset
+from data import GeirhosStyleTransferDataset
 
 
 def plot_class_values(categories, class_values, im, shape, texture, model_type):
@@ -302,8 +304,8 @@ if __name__ == '__main__':
     if model_type == 'saycam':
         # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
         model = models.resnext50_32x4d(pretrained=True)
-        model.fc = torch.nn.Linear(in_features=2048, out_features=1000, bias=True)
-        model = torch.nn.DataParallel(model)
+        model.fc = nn.Linear(in_features=2048, out_features=1000, bias=True)
+        model = nn.DataParallel(model)
         checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
                                 map_location=torch.device('cpu'))
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -315,46 +317,57 @@ if __name__ == '__main__':
         model = models.resnet18(pretrained=True)
 
     # Load and process the images using my custom Geirhos style transfer dataset class
-    g = GeirhosStyleTransferDataset(shape_dir, texture_dir)
+    style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
+    style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
     if not os.path.isdir('stimuli-texture'):
         g.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
 
 
     # Obtain ImageNet - Geirhos mapping
     mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
-    softmax = torch.nn.Softmax(dim=1)
-    softmax2 = torch.nn.Softmax(dim=0)
+    softmax = nn.Softmax(dim=1)
+    softmax2 = nn.Softmax(dim=0)
 
-    # Pass images into the model one at a time
-    for i in range(g.__len__()):
-        im, im_dir, shape, texture, shape_spec, texture_spec = g.__getitem__(i)
-        im = im.reshape(1, 3, 224, 224)
+    # Put model in evaluation mode
+    model.eval()
 
-        output = model(im)
-        soft_output = softmax(output).detach().numpy().squeeze()
-
-        decision, class_values = mapping.probabilities_to_decision(soft_output)
-
-        shape_idx = shape_categories.index(shape)
-        texture_idx = shape_categories.index(texture)
-        if class_values[shape_idx] > class_values[texture_idx]:
-            decision_idx = shape_idx
-        else:
-            decision_idx = texture_idx
-        decision_restricted = shape_categories[decision_idx]
-        restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
-        restricted_class_values = softmax2(restricted_class_values)
-
-        if verbose:
-            print('Decision for ' + im_dir + ': ' + decision)
-            print('\tRestricted decision: ' + decision_restricted)
-        if plot:
-            plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
-
-        shape_dict[shape][texture_spec + '0'] = [decision, class_values,
-                                            decision_restricted, restricted_class_values]
-        shape_spec_dict[shape].append(texture_spec)
-
-    csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
-    calculate_totals(shape_categories, 'results/' + model_type, verbose)
-    calculate_proportions('results/' + model_type, verbose)
+    with torch.no_grad():
+        # Pass images into the model one at a time
+        for batch in style_transfer_dataloader:
+            im, im_dir, shape, texture, shape_spec, texture_spec = batch
+     
+            # hack to extract vars
+            im_dir = im_dir[0]
+            shape = shape[0]
+            texture = texture[0]
+            shape_spec = shape_spec[0]
+            texture_spec = texture_spec[0]
+     
+            output = model(im)
+            soft_output = softmax(output).detach().numpy().squeeze()
+     
+            decision, class_values = mapping.probabilities_to_decision(soft_output)
+     
+            shape_idx = shape_categories.index(shape)
+            texture_idx = shape_categories.index(texture)
+            if class_values[shape_idx] > class_values[texture_idx]:
+                decision_idx = shape_idx
+            else:
+                decision_idx = texture_idx
+            decision_restricted = shape_categories[decision_idx]
+            restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
+            restricted_class_values = softmax2(restricted_class_values)
+     
+            if verbose:
+                print('Decision for ' + im_dir + ': ' + decision)
+                print('\tRestricted decision: ' + decision_restricted)
+            if plot:
+                plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
+     
+            shape_dict[shape][texture_spec + '0'] = [decision, class_values,
+                                                decision_restricted, restricted_class_values]
+            shape_spec_dict[shape].append(texture_spec)
+     
+        csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
+        calculate_totals(shape_categories, 'results/' + model_type, verbose)
+        calculate_proportions('results/' + model_type, verbose)
