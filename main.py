@@ -320,7 +320,7 @@ if __name__ == '__main__':
     style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
     style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
     if not os.path.isdir('stimuli-texture'):
-        g.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
+        style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
 
 
     # Obtain ImageNet - Geirhos mapping
