@@ -11,8 +11,11 @@ import pandas as pd
 import probabilities_to_decision
 import helper.human_categories as sc
 import matplotlib.pyplot as plt
+import glob
 from matplotlib import cm
-from data import GeirhosStyleTransferDataset
+import random
+from scipy import spatial
+from data import GeirhosStyleTransferDataset, GeirhosTriplets
 
 
 def plot_class_values(categories, class_values, im, shape, texture, model_type):
@@ -258,6 +261,198 @@ def calculate_proportions(result_dir, verbose=False):
     file.close()
 
 
+def get_penultimate_layer(model, image):
+    """Extracts the activations of the penultimate layer for a given input
+    image.
+
+    :param model: the model to extract activations from
+    :param image: the image to be passed through the model
+    :return: the activation of the penultimate layer"""
+
+    layer = model._modules.get('avgpool')
+    activations = torch.zeros(2048)
+
+    def copy_data(m, i, o):
+        activations.copy_(o.data)
+
+    h = layer.register_forward_hook(copy_data)
+
+    model(image)
+
+    h.remove()
+
+    print(activations)
+    return activations
+
+
+def plot_similarity_averages(model_type, shape_categories):
+    """Plots average shape/texture dot products and cosine similarities by
+    anchor image shape.
+
+    :param model_type: saycam, resnet50, etc.
+    :param shape_categories: a list of the 16 Geirhos classes.
+    """
+
+    plot_dir = 'figures/' + model_type + '/similarity'
+    try:
+        os.mkdir(plot_dir)
+    except FileExistsError:
+        pass
+
+    fig = plt.figure()
+    fig.set_figheight(6)
+    fig.set_figwidth(9.5)
+
+
+def calculate_similarity_averages(model_type, shape_categories, plot):
+    """Calculates average dot product/cosine similarity between an anchor image shape
+    class and its shape/texture matches. Stores results in a csv. Optionally generates
+    a plot.
+
+    :param model_type: resnet50, saycam, etc.
+    :param shape_categories: a list of the 16 Geirhos classes.
+    :param plot: true if plot should be generated.
+    """
+
+    columns = ['Anchor Image Shape', 'Average Dot Shape', 'Average Cos Shape',
+               'Average Dot Texture', 'Average Cos Texture']
+    results = pd.DataFrame(index=range(len(shape_categories)), columns=columns)
+    result_dir = 'results/' + model_type + '/similarity'
+
+    for i in range(len(shape_categories)):  # Iterate over anchor image shapes
+        anchor_shape = shape_categories[i]
+        if anchor_shape != 'cat':
+            continue
+
+        shape_dot = 0
+        shape_cos = 0
+        texture_dot = 0
+        texture_cos = 0
+        num_triplets = 0
+
+        for file in glob.glob(result_dir + '/' + anchor_shape + '*.csv'):  # Sum results by shape
+            df = pd.read_csv(file)
+
+            for index, row in df.iterrows():
+                shape_dot += float(row['Shape Dot'])
+                shape_cos += float(row['Shape Cos'])
+                texture_dot += float(row['Texture Dot'])
+                texture_cos += float(row['Texture Cos'])
+                num_triplets += 1
+
+        shape_dot = shape_dot / num_triplets
+        shape_cos = shape_cos / num_triplets
+        texture_dot = texture_dot / num_triplets
+        texture_cos = texture_cos / num_triplets
+
+        results.at[i, 'Anchor Image Shape'] = anchor_shape
+        results.at[i, 'Average Dot Shape'] = shape_dot
+        results.at[i, 'Average Cos Shape'] = shape_cos
+        results.at[i, 'Average Dot Texture'] = texture_dot
+        results.at[i, 'Average Cos Texture'] = texture_cos
+
+    results.to_csv(result_dir + '/averages.csv', index=False)
+
+
+def triplets(model, model_type, verbose, shape_dir):
+    """First generates all possible triplets of the following form:
+    (anchor image, shape match, texture match). Then passes a given anchor image,
+    shape match, and texture match into a model and retrieves the activations
+    of the penultimate layer for each. Finally, computes and stores cosine similarity
+    and dot products: anchor x shape match, anchor x texture match. This determines
+    whether the model thinks the shape or texture match for an anchor image is closer
+    to the anchor and essentially provides a secondary measure of shape/texture bias.
+
+    :param model: the model to obtain similarity measurements from.
+    :param model_type: resnet50, saycam, etc.
+    :param verbose: true if results should be printed to the terminal.
+    :param shape_dir: directory for the Geirhos dataset."""
+
+    t = GeirhosTriplets(shape_dir)
+    images = t.shape_classes.keys()
+    all_triplets = t.triplets_by_image
+
+    softmax = nn.Softmax(dim=1)
+
+    # Remove the final layer from the model
+    if model_type == 'saycam':
+        modules = list(model.module.children())[:-1]
+        penult_model = nn.Sequential(*modules)
+    elif model_type == 'resnet50':
+        modules = list(model.children())[:-1]
+        penult_model = nn.Sequential(*modules)
+
+    for p in penult_model.parameters():
+        p.requires_grad = False
+
+    columns = ['Anchor', 'Shape Match', 'Texture Match', 'Shape Dot', 'Shape Cos',
+               'Texture Dot', 'Texture Cos', 'Shape Dot Closer', 'Shape Cos Closer',
+               'Texture Dot Closer', 'Texture Cos Closer']
+
+    for anchor in images:  # Iterate over possible anchor images
+        anchor_triplets = all_triplets[anchor]['triplets']
+        num_triplets = len(anchor_triplets)
+
+        df = pd.DataFrame(index=range(num_triplets), columns=columns)
+        df['Anchor'] = anchor[:-4]
+
+        for i in range(num_triplets):  # Iterate over possible triplets
+            triplet = anchor_triplets[i]
+            shape_match = triplet[1]
+            texture_match = triplet[2]
+
+            df.at[i, 'Shape Match'] = shape_match[:-4]
+            df.at[i, 'Texture Match'] = texture_match[:-4]
+
+            # Retrieve images corresponding to names
+            anchor_im, shape_im, texture_im = t.getitem(triplet)
+
+            with torch.no_grad():
+                # Pass images into model
+                anchor_output = softmax(penult_model(anchor_im)).numpy().squeeze()
+                shape_output = softmax(penult_model(shape_im)).numpy().squeeze()
+                texture_output = softmax(penult_model(texture_im)).numpy().squeeze()
+
+                # Compute dot products
+                shape_dot = np.dot(anchor_output, shape_output)
+                texture_dot = np.dot(anchor_output, texture_output)
+
+                # Compute cosine similarities
+                shape_cos = spatial.distance.cosine(anchor_output, shape_output)
+                texture_cos = spatial.distance.cosine(anchor_output, texture_output)
+
+                if verbose:
+                    print("For " + anchor + " paired with " + shape_match + ", " + texture_match + ":")
+                    print("\tShape match dot product: " + str(shape_dot))
+                    print("\tShape match cos similarity: " + str(shape_cos))
+                    print("\t-------------")
+                    print("\tTexture match dot: " + str(texture_dot))
+                    print("\tTexture match cos similarity: " + str(texture_cos))
+                    print()
+
+            df.at[i, 'Shape Dot'] = shape_dot
+            df.at[i, 'Shape Cos'] = shape_cos
+            df.at[i, 'Texture Dot'] = texture_dot
+            df.at[i, 'Texture Cos'] = texture_cos
+
+            # Compare shape/texture results
+            if shape_dot > texture_dot:
+                df.at[i, 'Shape Dot Closer'] = 1
+                df.at[i, 'Texture Dot Closer'] = 0
+            else:
+                df.at[i, 'Shape Dot Closer'] = 0
+                df.at[i, 'Texture Dot Closer'] = 1
+
+            if shape_cos > texture_cos:
+                df.at[i, 'Shape Cos Closer'] = 1
+                df.at[i, 'Texture Cos Closer'] = 0
+            else:
+                df.at[i, 'Shape Cos Closer'] = 0
+                df.at[i, 'Texture Cos Closer'] = 1
+
+        df.to_csv('results/' + model_type + '/similarity/' + anchor[:-4] + '.csv', index=False)
+
+
 if __name__ == '__main__':
     """Passes images one at a time through a given model and stores/plots the results
     (the shape/texture of the image, the classification made, and whether or not
@@ -271,6 +466,8 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--model', help='Example: saycam, resnet50', required=False, default='saycam')
     parser.add_argument('-v', '--verbose', help='Prints results.', required=False, action='store_true')
     parser.add_argument('-p', '--plot', help='Plots results.', required=False, action='store_true')
+    parser.add_argument('-t', '--triplets', help='Obtains similarities for triplets of images.',
+                        required=False, action='store_true')
     args = parser.parse_args()
 
     batch_size = 1
@@ -279,27 +476,9 @@ if __name__ == '__main__':
     texture_dir = 'stimuli-texture/style-transfer'
     plot = args.plot
     verbose = args.verbose
+    t = args.triplets
 
     model_type = args.model  # 'saycam' or 'resnet50'
-
-    try:
-        os.mkdir('results/' + model_type)
-    except:
-        pass
-
-    try:
-        os.mkdir('figures/' + model_type)
-    except:
-        pass
-
-    shape_dict = dict.fromkeys(shape_categories)  # for storing the results
-    shape_categories0 = [shape + '0' for shape in shape_categories]
-    shape_dict0 = dict.fromkeys(shape_categories0)
-
-    shape_spec_dict = dict.fromkeys(shape_categories)  # contains lists of specific textures for each shape
-    for shape in shape_categories:
-        shape_dict[shape] = shape_dict0.copy()
-        shape_spec_dict[shape] = []
 
     if model_type == 'saycam':
         # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
@@ -316,58 +495,94 @@ if __name__ == '__main__':
     elif model_type == 'vgg11':
         model = models.resnet18(pretrained=True)
 
-    # Load and process the images using my custom Geirhos style transfer dataset class
-    style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
-    style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
-    if not os.path.isdir('stimuli-texture'):
-        style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
-
-
-    # Obtain ImageNet - Geirhos mapping
-    mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
-    softmax = nn.Softmax(dim=1)
-    softmax2 = nn.Softmax(dim=0)
-
     # Put model in evaluation mode
     model.eval()
 
-    with torch.no_grad():
-        # Pass images into the model one at a time
-        for batch in style_transfer_dataloader:
-            im, im_dir, shape, texture, shape_spec, texture_spec = batch
-     
-            # hack to extract vars
-            im_dir = im_dir[0]
-            shape = shape[0]
-            texture = texture[0]
-            shape_spec = shape_spec[0]
-            texture_spec = texture_spec[0]
-     
-            output = model(im)
-            soft_output = softmax(output).detach().numpy().squeeze()
-     
-            decision, class_values = mapping.probabilities_to_decision(soft_output)
-     
-            shape_idx = shape_categories.index(shape)
-            texture_idx = shape_categories.index(texture)
-            if class_values[shape_idx] > class_values[texture_idx]:
-                decision_idx = shape_idx
-            else:
-                decision_idx = texture_idx
-            decision_restricted = shape_categories[decision_idx]
-            restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
-            restricted_class_values = softmax2(restricted_class_values)
-     
-            if verbose:
-                print('Decision for ' + im_dir + ': ' + decision)
-                print('\tRestricted decision: ' + decision_restricted)
-            if plot:
-                plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
-     
-            shape_dict[shape][texture_spec + '0'] = [decision, class_values,
-                                                decision_restricted, restricted_class_values]
-            shape_spec_dict[shape].append(texture_spec)
-     
-        csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
-        calculate_totals(shape_categories, 'results/' + model_type, verbose)
-        calculate_proportions('results/' + model_type, verbose)
+    # Create directories for results and plots
+    try:
+        os.mkdir('results/' + model_type)
+    except FileExistsError:
+        pass
+
+    try:
+        os.mkdir('figures/' + model_type)
+    except FileExistsError:
+        pass
+
+    # Run simulations
+    if t:
+        try:
+            os.mkdir('results/' + model_type + '/similarity')
+        except FileExistsError:
+            pass
+
+        try:
+            os.mkdir('figures/' + model_type + '/similarity')
+        except FileExistsError:
+            pass
+
+        triplets(model, model_type, verbose, shape_dir)
+        calculate_similarity_averages(model_type, shape_categories, plot)
+
+    else:
+        shape_dict = dict.fromkeys(shape_categories)  # for storing the results
+        shape_categories0 = [shape + '0' for shape in shape_categories]
+        shape_dict0 = dict.fromkeys(shape_categories0)
+
+        shape_spec_dict = dict.fromkeys(shape_categories)  # contains lists of specific textures for each shape
+        for shape in shape_categories:
+            shape_dict[shape] = shape_dict0.copy()
+            shape_spec_dict[shape] = []
+
+        # Load and process the images using my custom Geirhos style transfer dataset class
+        style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
+        style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
+        if not os.path.isdir('stimuli-texture'):
+            style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
+
+        # Obtain ImageNet - Geirhos mapping
+        mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
+        softmax = nn.Softmax(dim=1)
+        softmax2 = nn.Softmax(dim=0)
+
+        with torch.no_grad():
+            # Pass images into the model one at a time
+            for batch in style_transfer_dataloader:
+                im, im_dir, shape, texture, shape_spec, texture_spec = batch
+                print(im.shape)
+
+                # hack to extract vars
+                im_dir = im_dir[0]
+                shape = shape[0]
+                texture = texture[0]
+                shape_spec = shape_spec[0]
+                texture_spec = texture_spec[0]
+
+                output = model(im)
+                soft_output = softmax(output).detach().numpy().squeeze()
+
+                decision, class_values = mapping.probabilities_to_decision(soft_output)
+
+                shape_idx = shape_categories.index(shape)
+                texture_idx = shape_categories.index(texture)
+                if class_values[shape_idx] > class_values[texture_idx]:
+                    decision_idx = shape_idx
+                else:
+                    decision_idx = texture_idx
+                decision_restricted = shape_categories[decision_idx]
+                restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
+                restricted_class_values = softmax2(restricted_class_values)
+
+                if verbose:
+                    print('Decision for ' + im_dir + ': ' + decision)
+                    print('\tRestricted decision: ' + decision_restricted)
+                if plot:
+                    plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
+
+                shape_dict[shape][texture_spec + '0'] = [decision, class_values,
+                                                    decision_restricted, restricted_class_values]
+                shape_spec_dict[shape].append(texture_spec)
+
+            csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
+            calculate_totals(shape_categories, 'results/' + model_type, verbose)
+            calculate_proportions('results/' + model_type, verbose)

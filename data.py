@@ -123,3 +123,134 @@ class GeirhosStyleTransferDataset(Dataset):
                     texture = ''.join([i for i in texture if not i.isdigit()])
 
                     shutil.copyfile(shape_dir + '/' + category + '/' + image, texture_path + '/' + texture + '/' + image)
+
+
+class GeirhosTriplets:
+    """This class provides a way to generate and access all possible triplets of
+    Geirhos images. These triplets consist of an anchor image (eg. cat4-truck3.png),
+    a shape match to the anchor image (eg. cat4-boat2.png), and a texture match to
+    the anchor (eg. dog3-truck3.png).
+
+    The shape and texture matches are specific: ie., cat4-truck3.png is a shape match
+    for cat4-knife2.png but not for cat2-knife2.png.
+
+    The purpose of these triplets is to measure similarity between shape matches/texture
+    matches and the anchor image after having been passed through a model."""
+
+    def __init__(self, shape_dir, transform=None):
+        """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
+        triplets_by_image is a dictionary; the keys are image names, and it stores all
+        shape/texture matches plus all possible triplets for a given image (as the anchor).
+
+        :param shape_dir: directory for the Geirhos dataset.
+        :param transform: a set of image transformations (optional)
+        """
+
+        self.shape_classes = {}
+        self.all_triplets = []
+        self.triplets_by_image = {}
+
+        # Default image processing
+        if transform is None:
+            self.transform = transforms.Compose([
+                transforms.Resize(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        else:
+            self.transform = transform
+
+        # Create/load dictionaries containing shape and texture classifications for each image
+        try:
+            # Load dictionary
+            self.shape_classes = json.load(open('geirhos_shape_classes.json'))
+
+        except FileNotFoundError:
+            # Create dictionary
+            for image_dir in glob.glob('stimuli-shape/style-transfer/*/*.png'):
+                image = image_dir.split('/')
+                shape = image[2]  # Shape class of image
+                texture_spec = image[3].split('-')[1].replace('.png', '')  # Specific texture instance, eg. clock2
+                shape_spec = image[3].split('-')[0]  # Specific shape instance, eg. airplane1
+                texture = ''.join([i for i in texture_spec if not i.isdigit()])  # Texture class
+
+                if shape != texture:  # Filter images that are not cue-conflict
+                    self.shape_classes[image[3]] = {}  # Initialize dictionary for single image
+                    self.shape_classes[image[3]]['shape'] = shape
+                    self.shape_classes[image[3]]['texture'] = texture
+                    self.shape_classes[image[3]]['shape_spec'] = shape_spec
+                    self.shape_classes[image[3]]['texture_spec'] = texture_spec
+                    self.shape_classes[image[3]]['dir'] = image_dir
+
+            # Save dictionary as a JSON file
+            with open('geirhos_shape_classes.json', 'w') as file:
+                json.dump(self.shape_classes, file)
+
+        # Generate/load triplets
+        try:
+            # Load triplets
+            self.triplets_by_image = json.load(open('geirhos_triplets.json'))
+            self.all_triplets = self.triplets_by_image['all']
+            self.triplets_by_image.pop('all')
+
+        except FileNotFoundError:
+            # Generate triplets
+            self.all_triplets = []
+
+            for image in self.shape_classes.keys(): # Iterate over anchor images
+                shape = self.shape_classes[image]['shape']
+                shape_spec = self.shape_classes[image]['shape_spec']
+                texture_spec = self.shape_classes[image]['texture_spec']
+
+                self.triplets_by_image[image] = {}
+                self.triplets_by_image[image]['shape matches'] = []
+                self.triplets_by_image[image]['texture matches'] = []
+                self.triplets_by_image[image]['triplets'] = []
+
+                for shape_match in glob.glob(shape_dir + '/' + shape + '/' + shape_spec + '*.png'):
+                    shape_match = shape_match.split('/')[-1]
+                    if shape_match == image or shape_match not in self.shape_classes.keys():
+                        continue
+                    self.triplets_by_image[image]['shape matches'].append(shape_match)
+                for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '.png'):
+                    texture_match = texture_match.split('/')[-1]
+                    if texture_match == image or texture_match not in self.shape_classes.keys():
+                        continue
+                    self.triplets_by_image[image]['texture matches'].append(texture_match)
+
+                for shape_match in self.triplets_by_image[image]['shape matches']:
+                    for texture_match in self.triplets_by_image[image]['texture matches']:
+                        triplet = [image, shape_match, texture_match]
+                        self.triplets_by_image[image]['triplets'].append(triplet)
+                        self.all_triplets.append(triplet)
+
+            self.triplets_by_image['all'] = self.all_triplets
+
+            # Save dictionary as a JSON file
+            with open('geirhos_triplets.json', 'w') as file:
+                json.dump(self.triplets_by_image, file)
+
+    def getitem(self, triplet):
+        """For a given (anchor, shape match, texture match) triplet, loads and returns
+        all 3 images.
+
+        :param triplet: a length-3 list containing the name of an anchor, shape match,
+            and texture match.
+        :return: the anchor, shape match, and texture match images with transforms applied."""
+
+        anchor_path = self.shape_classes[triplet[0]]['dir']
+        shape_path = self.shape_classes[triplet[1]]['dir']
+        texture_path = self.shape_classes[triplet[2]]['dir']
+
+        # Load images
+        anchor_im = Image.open(anchor_path)
+        shape_im = Image.open(shape_path)
+        texture_im = Image.open(texture_path)
+
+        # Apply transforms
+        if self.transform:
+            anchor_im = self.transform(anchor_im)
+            shape_im = self.transform(shape_im)
+            texture_im = self.transform(texture_im)
+
+        return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
