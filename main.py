@@ -589,7 +589,7 @@ if __name__ == '__main__':
         except FileNotFoundError:
             embeddings = get_embeddings(shape_dir, model, model_type)
 
-        #triplets(model, model_type, embeddings, verbose, shape_dir)
+        triplets(model, model_type, embeddings, verbose, shape_dir)
         calculate_similarity_averages(model_type, shape_categories, plot)
 
     else:
