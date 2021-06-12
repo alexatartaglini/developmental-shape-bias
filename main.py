@@ -314,15 +314,15 @@ def calculate_similarity_averages(model_type, shape_categories, plot):
     :param plot: true if plot should be generated.
     """
 
-    columns = ['Anchor Image Shape', 'Average Dot Shape', 'Average Cos Shape',
+    columns = ['Model', 'Anchor Image Shape', 'Average Dot Shape', 'Average Cos Shape',
                'Average Dot Texture', 'Average Cos Texture']
     results = pd.DataFrame(index=range(len(shape_categories)), columns=columns)
     result_dir = 'results/' + model_type + '/similarity'
 
+    results.at[:, 'Model'] = model_type
+
     for i in range(len(shape_categories)):  # Iterate over anchor image shapes
         anchor_shape = shape_categories[i]
-        if anchor_shape != 'cat':
-            continue
 
         shape_dot = 0
         shape_cos = 0
@@ -354,7 +354,7 @@ def calculate_similarity_averages(model_type, shape_categories, plot):
     results.to_csv(result_dir + '/averages.csv', index=False)
 
 
-def triplets(model, model_type, embeddings, verbose, shape_dir):
+def triplets(model_type, embeddings, verbose, shape_dir):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
@@ -363,7 +363,6 @@ def triplets(model, model_type, embeddings, verbose, shape_dir):
     match for an anchor image is closer to the anchor and essentially provides a secondary
     measure of shape/texture bias.
 
-    :param model: the model to obtain similarity measurements from.
     :param model_type: resnet50, saycam, etc.
     :param embeddings: a dictionary of embeddings for each image for the given model
     :param verbose: true if results should be printed to the terminal.
@@ -375,7 +374,8 @@ def triplets(model, model_type, embeddings, verbose, shape_dir):
 
     sim_dict = {}
 
-    columns = ['Anchor', 'Shape Match', 'Texture Match', 'Shape Dot', 'Shape Cos',
+    columns = ['Model', 'Anchor', 'Anchor Shape', 'Anchor Texture', 'Shape Match',
+               'Texture Match', 'Shape Dot', 'Shape Cos',
                'Texture Dot', 'Texture Cos', 'Shape Dot Closer', 'Shape Cos Closer',
                'Texture Dot Closer', 'Texture Cos Closer']
 
@@ -385,6 +385,9 @@ def triplets(model, model_type, embeddings, verbose, shape_dir):
 
         df = pd.DataFrame(index=range(num_triplets), columns=columns)
         df['Anchor'] = anchor[:-4]
+        df['Model'] = model_type
+        df['Anchor Shape'] = t.shape_classes[anchor]['shape_spec']
+        df['Anchor Texture'] = t.shape_classes[anchor]['texture_spec']
 
         for i in range(num_triplets):  # Iterate over possible triplets
             triplet = anchor_triplets[i]
@@ -489,7 +492,8 @@ def get_embeddings(dir, model, model_type):
     softmax = nn.Softmax(dim=1)
 
     # Remove the final layer from the model
-    if model_type == 'saycam':
+    if model_type == 'saycam' or model_type == 'saycamA' or model_type == 'saycamS'\
+            or model_type == 'saycamY':
         modules = list(model.module.children())[:-1]
         penult_model = nn.Sequential(*modules)
     elif model_type == 'resnet50':
@@ -551,6 +555,21 @@ if __name__ == '__main__':
         checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
                                 map_location=torch.device('cpu'))
         model.load_state_dict(checkpoint['model_state_dict'])
+    elif model_type == 'saycamA':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-A.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    elif model_type == 'saycamS':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-S.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    elif model_type == 'saycamY':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-Y.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     elif model_type == 'resnet50':
         model = models.resnet50(pretrained=True)
     elif model_type == 'resnet18':
@@ -589,7 +608,7 @@ if __name__ == '__main__':
         except FileNotFoundError:
             embeddings = get_embeddings(shape_dir, model, model_type)
 
-        triplets(model, model_type, embeddings, verbose, shape_dir)
+        triplets(model_type, embeddings, verbose, shape_dir)
         calculate_similarity_averages(model_type, shape_categories, plot)
 
     else:
@@ -617,7 +636,6 @@ if __name__ == '__main__':
             # Pass images into the model one at a time
             for batch in style_transfer_dataloader:
                 im, im_dir, shape, texture, shape_spec, texture_spec = batch
-                print(im.shape)
 
                 # hack to extract vars
                 im_dir = im_dir[0]
