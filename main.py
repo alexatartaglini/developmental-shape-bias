@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 import PIL
 import copy
 import os
+import json
 import numpy as np
 import argparse
 import pandas as pd
@@ -281,7 +282,6 @@ def get_penultimate_layer(model, image):
 
     h.remove()
 
-    print(activations)
     return activations
 
 
@@ -354,17 +354,18 @@ def calculate_similarity_averages(model_type, shape_categories, plot):
     results.to_csv(result_dir + '/averages.csv', index=False)
 
 
-def triplets(model, model_type, verbose, shape_dir):
+def triplets(model, model_type, embeddings, verbose, shape_dir):
     """First generates all possible triplets of the following form:
-    (anchor image, shape match, texture match). Then passes a given anchor image,
-    shape match, and texture match into a model and retrieves the activations
-    of the penultimate layer for each. Finally, computes and stores cosine similarity
-    and dot products: anchor x shape match, anchor x texture match. This determines
-    whether the model thinks the shape or texture match for an anchor image is closer
-    to the anchor and essentially provides a secondary measure of shape/texture bias.
+    (anchor image, shape match, texture match). Then retrieves the activations
+    of the penultimate layer of a given model for each image in the triplet.
+    Finally, computes and stores cosine similarity and dot products: anchor x shape match,
+    anchor x texture match. This determines whether the model thinks the shape or texture
+    match for an anchor image is closer to the anchor and essentially provides a secondary
+    measure of shape/texture bias.
 
     :param model: the model to obtain similarity measurements from.
     :param model_type: resnet50, saycam, etc.
+    :param embeddings: a dictionary of embeddings for each image for the given model
     :param verbose: true if results should be printed to the terminal.
     :param shape_dir: directory for the Geirhos dataset."""
 
@@ -372,18 +373,7 @@ def triplets(model, model_type, verbose, shape_dir):
     images = t.shape_classes.keys()
     all_triplets = t.triplets_by_image
 
-    softmax = nn.Softmax(dim=1)
-
-    # Remove the final layer from the model
-    if model_type == 'saycam':
-        modules = list(model.module.children())[:-1]
-        penult_model = nn.Sequential(*modules)
-    elif model_type == 'resnet50':
-        modules = list(model.children())[:-1]
-        penult_model = nn.Sequential(*modules)
-
-    for p in penult_model.parameters():
-        p.requires_grad = False
+    sim_dict = {}
 
     columns = ['Anchor', 'Shape Match', 'Texture Match', 'Shape Dot', 'Shape Cos',
                'Texture Dot', 'Texture Cos', 'Shape Dot Closer', 'Shape Cos Closer',
@@ -405,30 +395,46 @@ def triplets(model, model_type, verbose, shape_dir):
             df.at[i, 'Texture Match'] = texture_match[:-4]
 
             # Retrieve images corresponding to names
-            anchor_im, shape_im, texture_im = t.getitem(triplet)
+            # anchor_im, shape_im, texture_im = t.getitem(triplet)
 
-            with torch.no_grad():
-                # Pass images into model
-                anchor_output = softmax(penult_model(anchor_im)).numpy().squeeze()
-                shape_output = softmax(penult_model(shape_im)).numpy().squeeze()
-                texture_output = softmax(penult_model(texture_im)).numpy().squeeze()
+            # Get image embeddings
+            anchor_output = embeddings[anchor]
+            shape_output = embeddings[shape_match]
+            texture_output = embeddings[texture_match]
 
-                # Compute dot products
+            # Retrieve similarities if they've already been calculated
+            if (anchor, shape_match) in sim_dict.keys() or (shape_match, anchor) in sim_dict.keys():
+                try:
+                    shape_dot = sim_dict[(anchor, shape_match)][0]
+                    shape_cos = sim_dict[(anchor, shape_match)][1]
+                except KeyError:
+                    shape_dot = sim_dict[(shape_match, anchor)][0]
+                    shape_cos = sim_dict[(shape_match, anchor)][1]
+            else:
                 shape_dot = np.dot(anchor_output, shape_output)
-                texture_dot = np.dot(anchor_output, texture_output)
-
-                # Compute cosine similarities
                 shape_cos = spatial.distance.cosine(anchor_output, shape_output)
-                texture_cos = spatial.distance.cosine(anchor_output, texture_output)
+                sim_dict[(anchor, shape_match)] = [shape_dot, shape_cos]
 
-                if verbose:
-                    print("For " + anchor + " paired with " + shape_match + ", " + texture_match + ":")
-                    print("\tShape match dot product: " + str(shape_dot))
-                    print("\tShape match cos similarity: " + str(shape_cos))
-                    print("\t-------------")
-                    print("\tTexture match dot: " + str(texture_dot))
-                    print("\tTexture match cos similarity: " + str(texture_cos))
-                    print()
+            if (anchor, texture_match) in sim_dict.keys() or (texture_match, anchor) in sim_dict.keys():
+                try:
+                    texture_dot = sim_dict[(anchor, texture_match)][0]
+                    texture_cos = sim_dict[(anchor, texture_match)][1]
+                except KeyError:
+                    texture_dot = sim_dict[(texture_match, anchor)][0]
+                    texture_cos = sim_dict[(texture_match, anchor)][1]
+            else:
+                texture_dot = np.dot(anchor_output, texture_output)
+                texture_cos = spatial.distance.cosine(anchor_output, texture_output)
+                sim_dict[(anchor, texture_match)] = [texture_dot, texture_cos]
+
+            if verbose:
+                print("For " + anchor + " paired with " + shape_match + ", " + texture_match + ":")
+                print("\tShape match dot product: " + str(shape_dot))
+                print("\tShape match cos similarity: " + str(shape_cos))
+                print("\t-------------")
+                print("\tTexture match dot: " + str(texture_dot))
+                print("\tTexture match cos similarity: " + str(texture_cos))
+                print()
 
             df.at[i, 'Shape Dot'] = shape_dot
             df.at[i, 'Shape Cos'] = shape_cos
@@ -451,6 +457,63 @@ def triplets(model, model_type, verbose, shape_dir):
                 df.at[i, 'Texture Cos Closer'] = 1
 
         df.to_csv('results/' + model_type + '/similarity/' + anchor[:-4] + '.csv', index=False)
+
+
+def get_embeddings(dir, model, model_type):
+    """ Retrieves embeddings for each image in a dataset from the penultimate
+    layer of a given model. Stores the embeddings in a dictionary (indexed by
+    image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
+    file (model_type_embeddings.json)
+
+    :param dir: path of the dataset
+    :param model: the model to extract the embeddings from
+    :param model_type: the type of model, eg. saycam, resnet50, etc.
+
+    :return: a dictionary indexed by image name that contains the embeddings for
+        all images in a dataset extracted from the penultimate layer of a given
+        model.
+    """
+
+    try:
+        os.mkdir('embeddings')
+    except FileExistsError:
+        pass
+
+    # Initialize dictionary
+    embedding_dict = {}
+
+    # Initialize dataset
+    dataset = GeirhosStyleTransferDataset(dir, '')
+    num_images = dataset.__len__()
+
+    softmax = nn.Softmax(dim=1)
+
+    # Remove the final layer from the model
+    if model_type == 'saycam':
+        modules = list(model.module.children())[:-1]
+        penult_model = nn.Sequential(*modules)
+    elif model_type == 'resnet50':
+        modules = list(model.children())[:-1]
+        penult_model = nn.Sequential(*modules)
+
+    for p in penult_model.parameters():
+        p.requires_grad = False
+
+    with torch.no_grad():
+        # Iterate over images
+        for i in range(num_images):
+            im, name, shape, texture, shape_spec, texture_spec = dataset.__getitem__(i)
+            im = im.unsqueeze(0)
+
+            # Pass image into model
+            embedding = softmax(penult_model(im)).numpy().squeeze()
+
+            embedding_dict[name] = embedding.tolist()
+
+    with open('embeddings/' + model_type + '_embeddings.json', 'w') as file:
+        json.dump(embedding_dict, file)
+
+    return embedding_dict
 
 
 if __name__ == '__main__':
@@ -521,7 +584,12 @@ if __name__ == '__main__':
         except FileExistsError:
             pass
 
-        triplets(model, model_type, verbose, shape_dir)
+        try:
+            embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
+        except FileNotFoundError:
+            embeddings = get_embeddings(shape_dir, model, model_type)
+
+        #triplets(model, model_type, embeddings, verbose, shape_dir)
         calculate_similarity_averages(model_type, shape_categories, plot)
 
     else:
