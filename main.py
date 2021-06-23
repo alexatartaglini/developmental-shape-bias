@@ -287,7 +287,7 @@ def get_penultimate_layer(model, image):
 
 def plot_similarity_averages(model_type, shape_categories):
     """Plots average shape/texture dot products and cosine similarities by
-    anchor image shape.
+    anchor image shape. UNFINISHED
 
     :param model_type: saycam, resnet50, etc.
     :param shape_categories: a list of the 16 Geirhos classes.
@@ -302,6 +302,45 @@ def plot_similarity_averages(model_type, shape_categories):
     fig = plt.figure()
     fig.set_figheight(6)
     fig.set_figwidth(9.5)
+
+
+def calculate_similarity_totals(model_type):
+    """Calculates proportion of times the shape/texture dot product/cosine similarity
+    is closer for a given model. Stores proportions as a csv.
+
+    :param model_type: saycam, resnet50, etc."""
+
+    sim_dir = 'results/' + model_type + '/similarity/'
+
+    shape_dot = 0
+    shape_cos = 0
+    texture_dot = 0
+    texture_cos = 0
+    num_rows = 0
+
+    columns = ['Model', 'Shape Dot Closer', 'Shape Cos Closer', 'Texture Dot Closer', 'Texture Cos Closer']
+    results = pd.DataFrame(index=range(1), columns=columns)
+    results.at[0, 'Model'] = model_type
+
+    for file in glob.glob(sim_dir + '*.csv'):
+
+        if file == sim_dir + 'averages.csv':
+            continue
+        df = pd.read_csv(file)
+
+        for index, row in df.iterrows():
+            shape_dot += int(row['Shape Dot Closer'])
+            shape_cos += int(row['Shape Cos Closer'])
+            texture_dot += int(row['Texture Dot Closer'])
+            texture_cos += int(row['Texture Cos Closer'])
+            num_rows += 1
+
+    results.at[0, 'Shape Dot Closer'] = shape_dot / num_rows
+    results.at[0, 'Shape Cos Closer'] = shape_cos / num_rows
+    results.at[0, 'Texture Dot Closer'] = texture_dot / num_rows
+    results.at[0, 'Texture Cos Closer'] = texture_cos / num_rows
+
+    results.to_csv(sim_dir + 'proportions.csv', index=False)
 
 
 def calculate_similarity_averages(model_type, shape_categories, plot):
@@ -608,8 +647,9 @@ if __name__ == '__main__':
         except FileNotFoundError:
             embeddings = get_embeddings(shape_dir, model, model_type)
 
-        triplets(model_type, embeddings, verbose, shape_dir)
-        calculate_similarity_averages(model_type, shape_categories, plot)
+        #triplets(model_type, embeddings, verbose, shape_dir)
+        #calculate_similarity_averages(model_type, shape_categories, plot)
+        calculate_similarity_totals(model_type)
 
     else:
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
