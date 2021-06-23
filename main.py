@@ -285,23 +285,88 @@ def get_penultimate_layer(model, image):
     return activations
 
 
-def plot_similarity_averages(model_type, shape_categories):
-    """Plots average shape/texture dot products and cosine similarities by
-    anchor image shape. UNFINISHED
+def plot_similarity_histograms(model_type):
+    """First plots 4 regular histograms: one set of 2 for cosine similarity between anchor
+    images and shape/texture matches, and one set of 2 for dot product between anchor images
+    and shape/texture matches (across all classes). Then plots a set of two "difference"
+    histograms, which plot the difference between the cosine similarity or dot product to
+    the shape match and texture match (eg. cos_difference = cos_similarity(anchor, shape match)
+    - cos_similarity(anchor, texture match)).
 
     :param model_type: saycam, resnet50, etc.
-    :param shape_categories: a list of the 16 Geirhos classes.
     """
 
+    # Create directory
     plot_dir = 'figures/' + model_type + '/similarity'
     try:
         os.mkdir(plot_dir)
     except FileExistsError:
         pass
+    plot_dir += '/'
 
-    fig = plt.figure()
+    # Collect data
+    sim_dir = 'results/' + model_type + '/similarity/'
+
+    shape_dot = []
+    shape_cos = []
+    texture_dot = []
+    texture_cos = []
+    cos_difference = []
+    dot_difference = []
+
+    for file in glob.glob(sim_dir + '*.csv'):
+
+        if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv':
+            continue
+        df = pd.read_csv(file)
+
+        for index, row in df.iterrows():
+            shape_dot.append(float(row['Shape Dot']))
+            shape_cos.append(float(row['Shape Cos']))
+            texture_dot.append(float(row['Texture Dot']))
+            texture_cos.append(float(row['Texture Cos']))
+
+            cos_difference.append(float(row['Shape Cos']) - float(row['Texture Cos']))
+            dot_difference.append(float(row['Shape Dot']) - float(row['Texture Dot']))
+
+    # Plot regular histograms
+    fig, axs = plt.subplots(2, 2)
+    fig.set_figheight(10)
+    fig.set_figwidth(12)
+    plt.suptitle('Histogram of Similarities Between Anchor Images & Shape/Texture Matches',
+                 fontsize='xx-large')
+
+    y1, x1, _ = axs[0, 0].hist(shape_cos, color='#ff7694', bins=30)
+    axs[0, 0].set_title('Cosine Similarity: Shape Match')
+
+    y2, x2, _ = axs[0, 1].hist(texture_cos, color='#ffb4b4', bins=30)
+    axs[0, 1].set_ylim([0, max(y1.max(), y2.max() + 1000)])
+    axs[0, 0].set_ylim([0, max(y1.max(), y2.max()) + 1000])
+    axs[0, 1].set_title('Cosine Similarity: Texture Match')
+
+    y3, x3, _ = axs[1, 0].hist(shape_dot, color='#fee8ca', bins=30)
+    axs[1, 0].set_title('Dot Product: Shape Match')
+
+    y4, x4, _ = axs[1, 1].hist(texture_dot, color='#645f97', bins=30)
+    axs[1, 0].set_ylim([0, max(y3.max(), y4.max()) + 1000])
+    axs[1, 1].set_ylim([0, max(y3.max(), y4.max()) + 1000])
+    axs[1, 1].set_title('Dot Product: Texture Match')
+
+    plt.savefig(plot_dir + 'regular.png')
+
+    # Plot difference histograms
+    fig, axs = plt.subplots(1, 2)
     fig.set_figheight(6)
-    fig.set_figwidth(9.5)
+    fig.set_figwidth(12)
+    plt.suptitle('Histogram of Difference between Shape & Texture Match Similarities', fontsize='xx-large')
+    
+    y5, x5, _ = axs[0].hist(cos_difference, color='#ff7694', bins=30)
+    axs[0].set_title('Cosine Similarity Difference: Shape Match - Texture Match')
+    
+    y6, x6, _ = axs[1].hist(dot_difference, color='#ffb4b4', bins=30)
+    axs[1].set_title('Dot Product Difference: Shape Match - Texture Match')
+    
+    plt.savefig(plot_dir + 'difference.png')
 
 
 def calculate_similarity_totals(model_type):
@@ -647,9 +712,12 @@ if __name__ == '__main__':
         except FileNotFoundError:
             embeddings = get_embeddings(shape_dir, model, model_type)
 
-        #triplets(model_type, embeddings, verbose, shape_dir)
-        #calculate_similarity_averages(model_type, shape_categories, plot)
+        triplets(model_type, embeddings, verbose, shape_dir)
+        calculate_similarity_averages(model_type, shape_categories, plot)
         calculate_similarity_totals(model_type)
+
+        if plot:
+            plot_similarity_histograms(model_type)
 
     else:
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
