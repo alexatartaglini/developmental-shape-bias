@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-from torchvision import datasets, transforms, models
+from torchvision import models
 from torch.utils.data import DataLoader
-import PIL
-import copy
 import os
 import json
 import numpy as np
@@ -13,7 +11,7 @@ import probabilities_to_decision
 import helper.human_categories as sc
 import matplotlib.pyplot as plt
 import glob
-from matplotlib import cm
+import math
 import random
 from scipy import spatial
 from data import GeirhosStyleTransferDataset, GeirhosTriplets
@@ -286,12 +284,13 @@ def get_penultimate_layer(model, image):
 
 
 def plot_similarity_histograms(model_type):
-    """First plots 4 regular histograms: one set of 2 for cosine similarity between anchor
-    images and shape/texture matches, and one set of 2 for dot product between anchor images
+    """First plots 6 regular histograms: one set of 2 for cosine similarity between anchor
+    images and shape/texture matches, one set of 2 for dot product between anchor images
+    and shape/texture matches, and one set of 2 for Euclidean distance between anchor images
     and shape/texture matches (across all classes). Then plots a set of two "difference"
-    histograms, which plot the difference between the cosine similarity or dot product to
-    the shape match and texture match (eg. cos_difference = cos_similarity(anchor, shape match)
-    - cos_similarity(anchor, texture match)).
+    histograms, which plot the difference between the cosine similarity, dot product, or
+    Euclidean distance to the shape match and texture match (eg. cos_difference =
+    cos_similarity(anchor, shape match) - cos_similarity(anchor, texture match)).
 
     :param model_type: saycam, resnet50, etc.
     """
@@ -309,42 +308,49 @@ def plot_similarity_histograms(model_type):
 
     shape_dot = []
     shape_cos = []
+    shape_ed = []
     texture_dot = []
     texture_cos = []
+    texture_ed = []
     cos_difference = []
     dot_difference = []
+    ed_difference = []
 
     for file in glob.glob(sim_dir + '*.csv'):
 
-        if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv':
+        if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv' \
+                or file == sim_dir + 'matrix.csv':
             continue
         df = pd.read_csv(file)
 
         for index, row in df.iterrows():
             shape_dot.append(float(row['Shape Dot']))
             shape_cos.append(float(row['Shape Cos']))
+            shape_ed.append(float(row['Shape ED']))
             texture_dot.append(float(row['Texture Dot']))
             texture_cos.append(float(row['Texture Cos']))
+            texture_ed.append(float(row['Texture ED']))
 
             cos_difference.append(float(row['Shape Cos']) - float(row['Texture Cos']))
             dot_difference.append(float(row['Shape Dot']) - float(row['Texture Dot']))
+            ed_difference.append(float(row['Shape ED']) - float(row['Texture ED']))
 
     # Plot regular histograms
-    fig, axs = plt.subplots(2, 2)
-    fig.set_figheight(10)
+    fig, axs = plt.subplots(3, 2)
+    fig.set_figheight(14)
     fig.set_figwidth(12)
     plt.suptitle('Histogram of Similarities Between Anchor Images & Shape/Texture Matches',
                  fontsize='xx-large')
 
-    y1, x1, _ = axs[0, 0].hist(shape_cos, color='#ff7694', bins=30)
+    y1, x1, _ = axs[0, 0].hist(shape_cos, color='#ffb4b4', bins=30)
     axs[0, 0].set_title('Cosine Similarity: Shape Match')
 
-    y2, x2, _ = axs[0, 1].hist(texture_cos, color='#ffb4b4', bins=30)
+    y2, x2, _ = axs[0, 1].hist(texture_cos, color='#ff7694', bins=30)
     axs[0, 1].set_ylim([0, max(y1.max(), y2.max() + 1000)])
     axs[0, 0].set_ylim([0, max(y1.max(), y2.max()) + 1000])
     axs[0, 1].set_title('Cosine Similarity: Texture Match')
 
-    y3, x3, _ = axs[1, 0].hist(shape_dot, color='#fee8ca', bins=30)
+    y3, x3, _ = axs[1, 0].hist(shape_dot, color='#ba6ad0', bins=30)
     axs[1, 0].set_title('Dot Product: Shape Match')
 
     y4, x4, _ = axs[1, 1].hist(texture_dot, color='#645f97', bins=30)
@@ -352,60 +358,241 @@ def plot_similarity_histograms(model_type):
     axs[1, 1].set_ylim([0, max(y3.max(), y4.max()) + 1000])
     axs[1, 1].set_title('Dot Product: Texture Match')
 
+    y5, x5, _ = axs[2, 0].hist(shape_ed, color='#fee8ca', bins=30)
+    axs[2, 0].set_title('Euclidean Distance: Shape Match')
+
+    y6, x6, _ = axs[2, 1].hist(texture_ed, color='#cb8f32', bins=30)
+    axs[2, 0].set_ylim([0, max(y5.max(), y6.max()) + 1000])
+    axs[2, 1].set_ylim([0, max(y5.max(), y6.max()) + 1000])
+    axs[2, 1].set_title('Euclidean Distance: Texture Match')
+
     plt.savefig(plot_dir + 'regular.png')
 
     # Plot difference histograms
-    fig, axs = plt.subplots(1, 2)
+    fig, axs = plt.subplots(1, 3)
     fig.set_figheight(6)
-    fig.set_figwidth(12)
+    fig.set_figwidth(18)
     plt.suptitle('Histogram of Difference between Shape & Texture Match Similarities', fontsize='xx-large')
     
-    y5, x5, _ = axs[0].hist(cos_difference, color='#ff7694', bins=30)
-    axs[0].set_title('Cosine Similarity Difference: Shape Match - Texture Match')
+    y7, x7, _ = axs[0].hist(cos_difference, color='#ff7694', bins=30)
+    axs[0].set_title('Cosine Similarity Difference: Shape - Texture')
     
-    y6, x6, _ = axs[1].hist(dot_difference, color='#ffb4b4', bins=30)
-    axs[1].set_title('Dot Product Difference: Shape Match - Texture Match')
+    y8, x8, _ = axs[1].hist(dot_difference, color='#ffb4b4', bins=30)
+    axs[1].set_title('Dot Product Difference: Shape - Texture')
+
+    y9, x9, _ = axs[2].hist(ed_difference, color='#fee8ca', bins=30)
+    axs[2].set_title('Euclidean Distance Difference: Shape - Texture')
     
     plt.savefig(plot_dir + 'difference.png')
 
 
-def calculate_similarity_totals(model_type):
+def generate_fake_triplets(model_type, model, shape_dir, n=230431):
+    '''Generates fake embeddings that have the same dimensionality as
+     model_type for n triplets, then calculates cosine similarity & dot product
+     statistics.
+
+     :param model_type: resnet50, saycam, etc.
+     :param n: number of fake triplets to generate. Default is the number of
+               triplets the real models see.'''
+
+    # Retrieve embedding magnitude statistics from the real model
+    try:
+        embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
+    except FileNotFoundError:
+        embeddings = get_embeddings(shape_dir, model, model_type)
+
+    avg = 0
+    num_embeddings = 0
+    min_e = math.inf
+    max_e = 0
+
+    size = len(list(embeddings.values())[0])
+
+    for embedding in embeddings.values():
+        num_embeddings += 1
+        mag = np.linalg.norm(embedding)
+        avg += mag
+        if mag > max_e:
+            max_e = mag
+        if mag < min_e:
+            min_e = mag
+
+    avg = avg / num_embeddings
+
+    columns = ['Model', 'Anchor', 'Shape Match', 'Texture Match',
+               'Shape Dot', 'Shape Cos', 'Texture Dot', 'Texture Cos'
+               'Shape Dot Closer', 'Shape Cos Closer', 'Texture Dot Closer', 'Texture Cos Closer']
+    results = pd.DataFrame(index=range(n), columns=columns)
+
+    try:
+        os.mkdir('results/' + model_type +'/similarity/fake')
+    except FileExistsError:
+        pass
+
+    #print("average magnitude: " + str(avg))
+    #print("max: " + str(max_e))
+    #print("min: " + str(min_e))
+    #print("range: " + str(max_e - min_e))
+
+    # Iterate over n fake triplets
+    for t in range(n):
+        anchor = []
+        shape_match = []
+        texture_match = []
+
+        lists = [anchor, shape_match, texture_match]
+        new_lists = []
+
+        # Generate three random vectors
+        for l in lists:
+
+            for idx in range(size):
+                l.append(random.random())
+
+            mag = -1
+            while mag < 0:
+                mag = np.random.normal(loc=avg, scale=min(avg - min_e, max_e - avg) / 2)
+
+            l = np.array(l)
+            current_mag = np.linalg.norm(l)
+            new_l = (mag * l) / current_mag
+            new_lists.append(new_l)
+
+        anchor = new_lists[0]
+        shape_match = new_lists[1]
+        texture_match = new_lists[2]
+
+        #print(np.linalg.norm(anchor))
+        #print(np.linalg.norm(shape_match))
+        #print(np.linalg.norm(texture_match))
+
+        results.at[t, 'Anchor'] = anchor
+        results.at[t, 'Shape Match'] = shape_match
+        results.at[t, 'Texture Match'] = texture_match
+
+        shape_dot = np.dot(anchor, shape_match)
+        shape_cos = spatial.distance.cosine(anchor, shape_match)
+        texture_dot = np.dot(anchor, texture_match)
+        texture_cos = spatial.distance.cosine(anchor, texture_match)
+
+        results.at[t, 'Shape Dot'] = shape_dot
+        results.at[t, 'Shape Cos'] = shape_cos
+        results.at[t, 'Texture Dot'] = texture_dot
+        results.at[t, 'Texture Cos'] = texture_cos
+
+        if shape_dot > texture_dot:
+            results.at[t, 'Shape Dot Closer'] = 1
+            results.at[t, 'Texture Dot Closer'] = 0
+        else:
+            results.at[t, 'Shape Dot Closer'] = 0
+            results.at[t, 'Texture Dot Closer'] = 1
+
+        if shape_cos > texture_cos:
+            results.at[t, 'Shape Cos Closer'] = 1
+            results.at[t, 'Texture Cos Closer'] = 0
+        else:
+            results.at[t, 'Shape Cos Closer'] = 0
+            results.at[t, 'Texture Cos Closer'] = 1
+
+    results.to_csv('results/' + model_type +'/similarity/fake/fake.csv')
+    calculate_similarity_totals(model_type, fake=True)
+
+
+def calculate_similarity_totals(model_type, matrix=False, fake=False):
     """Calculates proportion of times the shape/texture dot product/cosine similarity
     is closer for a given model. Stores proportions as a csv.
 
-    :param model_type: saycam, resnet50, etc."""
+    :param model_type: saycam, resnet50, etc.
+    :param matrix: true if you want to calculate a matrix of totals instead of
+                   proportions."""
 
-    sim_dir = 'results/' + model_type + '/similarity/'
+    if not fake:
+        sim_dir = 'results/' + model_type + '/similarity/'
+    else:
+        sim_dir = 'results/' + model_type +'/similarity/fake/'
 
-    shape_dot = 0
-    shape_cos = 0
-    texture_dot = 0
-    texture_cos = 0
-    num_rows = 0
+    if not matrix:
+        columns = ['Model', 'Shape Dot Closer', 'Shape Cos Closer', 'Texture Dot Closer', 'Texture Cos Closer',
+                   'Shape ED Closer', 'Texture ED Closer']
+        results = pd.DataFrame(index=range(1), columns=columns)
 
-    columns = ['Model', 'Shape Dot Closer', 'Shape Cos Closer', 'Texture Dot Closer', 'Texture Cos Closer']
-    results = pd.DataFrame(index=range(1), columns=columns)
-    results.at[0, 'Model'] = model_type
+        shape_dot = 0
+        shape_cos = 0
+        shape_ed = 0
+        texture_dot = 0
+        texture_cos = 0
+        texture_ed = 0
+        num_rows = 0
+
+    else:
+        # Matrix: [0, 0] = shape match w/ dot and shape match w/ cos
+        # [0, 1] = texture match w/ dot and shape match w/ cos
+        # [1, 0] = shape match w/ dot and texture match w/ cos
+        # [1, 1] = texture match w/ dot and texture match w/ cos
+        columns = ['Model', ' ', 'Shape Match with Dot Product', 'Texture Match with Dot Product']
+        results = pd.DataFrame(index=range(2), columns=columns)
+        results.at[0, ' '] = 'Shape Match with Cosine Similarity'
+        results.at[1, ' '] = 'Texture Match with Cosine Similarity'
+
+        m0_0 = 0
+        m0_1 = 0
+        m1_0 = 0
+        m1_1 = 0
+
+    results.at[:, 'Model'] = model_type
 
     for file in glob.glob(sim_dir + '*.csv'):
 
-        if file == sim_dir + 'averages.csv':
+        if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv'\
+                or file == sim_dir + 'matrix.csv':
             continue
         df = pd.read_csv(file)
 
         for index, row in df.iterrows():
-            shape_dot += int(row['Shape Dot Closer'])
-            shape_cos += int(row['Shape Cos Closer'])
-            texture_dot += int(row['Texture Dot Closer'])
-            texture_cos += int(row['Texture Cos Closer'])
-            num_rows += 1
+            shape_dot_closer = int(row['Shape Dot Closer'])
+            shape_cos_closer = int(row['Shape Cos Closer'])
+            shape_ed_closer = int(row['Shape ED Closer'])
+            texture_dot_closer = int(row['Texture Dot Closer'])
+            texture_cos_closer = int(row['Texture Cos Closer'])
+            texture_ed_closer = int(row['Texture ED Closer'])
 
-    results.at[0, 'Shape Dot Closer'] = shape_dot / num_rows
-    results.at[0, 'Shape Cos Closer'] = shape_cos / num_rows
-    results.at[0, 'Texture Dot Closer'] = texture_dot / num_rows
-    results.at[0, 'Texture Cos Closer'] = texture_cos / num_rows
+            if not matrix:
+                shape_dot += shape_dot_closer
+                shape_cos += shape_cos_closer
+                shape_ed += shape_ed_closer
+                texture_dot += texture_dot_closer
+                texture_cos += texture_cos_closer
+                texture_ed += texture_ed_closer
+                num_rows += 1
 
-    results.to_csv(sim_dir + 'proportions.csv', index=False)
+            else:
+                if shape_dot_closer == 1:
+                    if shape_cos_closer == 1:
+                        m0_0 += 1
+                    elif texture_cos_closer == 1:
+                        m1_0 += 1
+                elif texture_dot_closer == 1:
+                    if shape_cos_closer == 1:
+                        m0_1 += 1
+                    elif texture_cos_closer == 1:
+                        m1_1 += 1
+
+    if not matrix:
+        results.at[0, 'Shape Dot Closer'] = shape_dot / num_rows
+        results.at[0, 'Shape Cos Closer'] = shape_cos / num_rows
+        results.at[0, 'Shape ED Closer'] = shape_ed / num_rows
+        results.at[0, 'Texture Dot Closer'] = texture_dot / num_rows
+        results.at[0, 'Texture Cos Closer'] = texture_cos / num_rows
+        results.at[0, 'Texture ED Closer'] = texture_ed / num_rows
+
+        results.to_csv(sim_dir + 'proportions.csv', index=False)
+    else:
+        results.at[0, 'Shape Match with Dot Product'] = m0_0
+        results.at[1, 'Shape Match with Dot Product'] = m1_0
+        results.at[0, 'Texture Match with Dot Product'] = m0_1
+        results.at[1, 'Texture Match with Dot Product'] = m1_1
+
+        results.to_csv(sim_dir + 'matrix.csv', index=False)
 
 
 def calculate_similarity_averages(model_type, shape_categories, plot):
@@ -462,10 +649,10 @@ def triplets(model_type, embeddings, verbose, shape_dir):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
-    Finally, computes and stores cosine similarity and dot products: anchor x shape match,
-    anchor x texture match. This determines whether the model thinks the shape or texture
-    match for an anchor image is closer to the anchor and essentially provides a secondary
-    measure of shape/texture bias.
+    Finally, computes and stores cosine similarity, dot products, Euclidean distances:
+    anchor x shape match, anchor x texture match. This determines whether the model
+    thinks the shape or texture match for an anchor image is closer to the anchor and
+    essentially provides a secondary measure of shape/texture bias.
 
     :param model_type: resnet50, saycam, etc.
     :param embeddings: a dictionary of embeddings for each image for the given model
@@ -479,9 +666,12 @@ def triplets(model_type, embeddings, verbose, shape_dir):
     sim_dict = {}
 
     columns = ['Model', 'Anchor', 'Anchor Shape', 'Anchor Texture', 'Shape Match',
-               'Texture Match', 'Shape Dot', 'Shape Cos',
-               'Texture Dot', 'Texture Cos', 'Shape Dot Closer', 'Shape Cos Closer',
-               'Texture Dot Closer', 'Texture Cos Closer']
+               'Texture Match', 'Shape Dot', 'Shape Cos', 'Shape ED',
+               'Texture Dot', 'Texture Cos', 'Texture ED', 'Shape Dot Closer',
+               'Shape Cos Closer', 'Shape ED Closer',
+               'Texture Dot Closer', 'Texture Cos Closer', 'Texture ED Closer']
+
+    cosx = torch.nn.CosineSimilarity(dim=0, eps=1e-08)
 
     for anchor in images:  # Iterate over possible anchor images
         anchor_triplets = all_triplets[anchor]['triplets']
@@ -505,48 +695,58 @@ def triplets(model_type, embeddings, verbose, shape_dir):
             # anchor_im, shape_im, texture_im = t.getitem(triplet)
 
             # Get image embeddings
-            anchor_output = embeddings[anchor]
-            shape_output = embeddings[shape_match]
-            texture_output = embeddings[texture_match]
+            anchor_output = torch.FloatTensor(embeddings[anchor])
+            shape_output = torch.FloatTensor(embeddings[shape_match])
+            texture_output = torch.FloatTensor(embeddings[texture_match])
 
             # Retrieve similarities if they've already been calculated
             if (anchor, shape_match) in sim_dict.keys() or (shape_match, anchor) in sim_dict.keys():
                 try:
                     shape_dot = sim_dict[(anchor, shape_match)][0]
                     shape_cos = sim_dict[(anchor, shape_match)][1]
+                    shape_ed = sim_dict[(anchor, shape_match)][2]
                 except KeyError:
                     shape_dot = sim_dict[(shape_match, anchor)][0]
                     shape_cos = sim_dict[(shape_match, anchor)][1]
+                    shape_ed = sim_dict[(shape_match, anchor)][2]
             else:
                 shape_dot = np.dot(anchor_output, shape_output)
-                shape_cos = spatial.distance.cosine(anchor_output, shape_output)
-                sim_dict[(anchor, shape_match)] = [shape_dot, shape_cos]
+                shape_cos = cosx(anchor_output, shape_output)
+                shape_ed = torch.cdist(torch.unsqueeze(shape_output, 0), torch.unsqueeze(anchor_output, 0))
+                sim_dict[(anchor, shape_match)] = [shape_dot, shape_cos, shape_ed]
 
             if (anchor, texture_match) in sim_dict.keys() or (texture_match, anchor) in sim_dict.keys():
                 try:
                     texture_dot = sim_dict[(anchor, texture_match)][0]
                     texture_cos = sim_dict[(anchor, texture_match)][1]
+                    texture_ed = sim_dict[(anchor, texture_match)][2]
                 except KeyError:
                     texture_dot = sim_dict[(texture_match, anchor)][0]
                     texture_cos = sim_dict[(texture_match, anchor)][1]
+                    texture_ed = sim_dict[(texture_match, anchor)][2]
             else:
                 texture_dot = np.dot(anchor_output, texture_output)
-                texture_cos = spatial.distance.cosine(anchor_output, texture_output)
-                sim_dict[(anchor, texture_match)] = [texture_dot, texture_cos]
+                texture_cos = cosx(anchor_output, texture_output)
+                texture_ed = torch.cdist(torch.unsqueeze(texture_output, 0), torch.unsqueeze(anchor_output, 0))
+                sim_dict[(anchor, texture_match)] = [texture_dot, texture_cos, texture_ed]
 
             if verbose:
                 print("For " + anchor + " paired with " + shape_match + ", " + texture_match + ":")
                 print("\tShape match dot product: " + str(shape_dot))
-                print("\tShape match cos similarity: " + str(shape_cos))
+                print("\tShape match cos similarity: " + str(shape_cos.item()))
+                print("\tShape match Euclidean distance: " + str(shape_ed.item()))
                 print("\t-------------")
                 print("\tTexture match dot: " + str(texture_dot))
-                print("\tTexture match cos similarity: " + str(texture_cos))
+                print("\tTexture match cos similarity: " + str(texture_cos.item()))
+                print("\tTexture match Euclidean distance: " + str(texture_ed.item()))
                 print()
 
             df.at[i, 'Shape Dot'] = shape_dot
-            df.at[i, 'Shape Cos'] = shape_cos
+            df.at[i, 'Shape Cos'] = shape_cos.item()
+            df.at[i, 'Shape ED'] = shape_ed.item()
             df.at[i, 'Texture Dot'] = texture_dot
-            df.at[i, 'Texture Cos'] = texture_cos
+            df.at[i, 'Texture Cos'] = texture_cos.item()
+            df.at[i, 'Texture ED'] = texture_ed.item()
 
             # Compare shape/texture results
             if shape_dot > texture_dot:
@@ -563,10 +763,17 @@ def triplets(model_type, embeddings, verbose, shape_dir):
                 df.at[i, 'Shape Cos Closer'] = 0
                 df.at[i, 'Texture Cos Closer'] = 1
 
+            if shape_ed < texture_ed:
+                df.at[i, 'Shape ED Closer'] = 1
+                df.at[i, 'Texture ED Closer'] = 0
+            else:
+                df.at[i, 'Shape ED Closer'] = 0
+                df.at[i, 'Texture ED Closer'] = 1
+
         df.to_csv('results/' + model_type + '/similarity/' + anchor[:-4] + '.csv', index=False)
 
 
-def get_embeddings(dir, model, model_type):
+def get_embeddings(dir, model, model_type, self_supervised=False):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
@@ -575,6 +782,7 @@ def get_embeddings(dir, model, model_type):
     :param dir: path of the dataset
     :param model: the model to extract the embeddings from
     :param model_type: the type of model, eg. saycam, resnet50, etc.
+    :param self_supervised: True if the model being passed is self supervised.
 
     :return: a dictionary indexed by image name that contains the embeddings for
         all images in a dataset extracted from the penultimate layer of a given
@@ -596,16 +804,19 @@ def get_embeddings(dir, model, model_type):
     softmax = nn.Softmax(dim=1)
 
     # Remove the final layer from the model
-    if model_type == 'saycam' or model_type == 'saycamA' or model_type == 'saycamS'\
-            or model_type == 'saycamY':
-        modules = list(model.module.children())[:-1]
-        penult_model = nn.Sequential(*modules)
-    elif model_type == 'resnet50':
-        modules = list(model.children())[:-1]
-        penult_model = nn.Sequential(*modules)
+    if self_supervised:
+        penult_model = model
+    else:
+        if model_type == 'saycam' or model_type == 'saycamA' or model_type == 'saycamS'\
+                or model_type == 'saycamY':
+            modules = list(model.module.children())[:-1]
+            penult_model = nn.Sequential(*modules)
+        elif model_type == 'resnet50':
+            modules = list(model.children())[:-1]
+            penult_model = nn.Sequential(*modules)
 
-    for p in penult_model.parameters():
-        p.requires_grad = False
+        for p in penult_model.parameters():
+            p.requires_grad = False
 
     with torch.no_grad():
         # Iterate over images
@@ -676,10 +887,6 @@ if __name__ == '__main__':
         model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     elif model_type == 'resnet50':
         model = models.resnet50(pretrained=True)
-    elif model_type == 'resnet18':
-        model = models.resnet18(pretrained=True)
-    elif model_type == 'vgg11':
-        model = models.resnet18(pretrained=True)
 
     # Put model in evaluation mode
     model.eval()
@@ -713,8 +920,9 @@ if __name__ == '__main__':
             embeddings = get_embeddings(shape_dir, model, model_type)
 
         triplets(model_type, embeddings, verbose, shape_dir)
-        calculate_similarity_averages(model_type, shape_categories, plot)
+        #calculate_similarity_averages(model_type, shape_categories, plot)
         calculate_similarity_totals(model_type)
+        #generate_fake_triplets(model_type, model, shape_dir)
 
         if plot:
             plot_similarity_histograms(model_type)
