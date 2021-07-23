@@ -1,13 +1,53 @@
 import os
 from torch.utils.data import Dataset
+import numpy as np
 from torchvision import transforms
 from PIL import Image
 import shutil
 import json
 import glob
-
 import warnings
+import cv2
 warnings.filterwarnings("ignore")
+
+
+def calculate_dataset_stats(path, num_channels, f):
+    """This function calculates and returns the mean and std of an image dataset.
+    Should be used to determine values for normalization for transforms.
+
+    :param path: the path to the dataset.
+    :param num_channels: the number of channels (ie. 1, 3).
+    :param f: True if using artificial dataset
+
+    :return: two num_channels length lists, one containing the mean and one
+             containing the std."""
+
+    if f:
+        classes = ['']
+    else:
+        classes = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
+
+    pixel_num = 0
+    channel_sum = np.zeros(num_channels)
+    channel_sum_squared = np.zeros(num_channels)
+
+    for idx, d in enumerate(classes):
+        im_paths = glob.glob(os.path.join(path, d, "*.png"))
+        for path in im_paths:
+            im = cv2.imread(path)   # image in M*N*CHANNEL_NUM shape, channel in BGR order
+            im = im / 255.0
+            pixel_num += (im.size / num_channels)
+            channel_sum = channel_sum + np.sum(im, axis=(0, 1))
+            channel_sum_squared = channel_sum_squared + np.sum(np.square(im), axis=(0, 1))
+
+    bgr_mean = channel_sum / pixel_num
+    bgr_std = np.sqrt(channel_sum_squared / pixel_num - np.square(bgr_mean))
+
+    # change the format from bgr to rgb
+    rgb_mean = list(bgr_mean)[::-1]
+    rgb_std = list(bgr_std)[::-1]
+
+    return rgb_mean, rgb_std
 
 
 class GeirhosStyleTransferDataset(Dataset):
@@ -26,10 +66,12 @@ class GeirhosStyleTransferDataset(Dataset):
 
         # Default image processing
         if transform is None:
+            rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/style-transfer', 3, False)
+
             self.transform = transforms.Compose([
                 transforms.Resize(224),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                transforms.Normalize(mean=rgb_mean, std=rgb_std)
             ])
         else:
             self.transform = transform
@@ -152,10 +194,12 @@ class GeirhosTriplets:
 
         # Default image processing
         if transform is None:
+            rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/style-transfer', 3, False)
+
             self.transform = transforms.Compose([
                 transforms.Resize(224),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                transforms.Normalize(mean=rgb_mean, std=rgb_std)
             ])
         else:
             self.transform = transform
@@ -254,3 +298,171 @@ class GeirhosTriplets:
             texture_im = self.transform(texture_im)
 
         return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
+
+
+class FakeStimTrials:
+    """This class provides a way to generate and access all possible trials of novel,
+    artificial stimuli from the stimuli-shape/fake directory. Each stimulus consists of
+    a shape, color, and texture. A trial consists of an anchor image, a shape match, a
+    color match, and a texture match."""
+
+    def __init__(self, fake_dir='stimuli-shape/fake', transform=None):
+        """Generates/loads all possible trials. all_trials is a list of all 4-tuples.
+        trials_by_image is a dictionary; the keys are the image paths, and it stores
+        all shape/color/texture matches plus all possible trials for the given image
+        as the anchor.
+
+        :param fake_dir: directory for fake images
+        :param transform: transforms to be applied"""
+
+        self.all_stims = {}  # Contains shape, texture, & color classifications for all images
+        self.all_trials = []
+        self.trials_by_image = {}
+
+        # Default image processing
+        if transform is None:
+            rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/fake', 3, True)
+
+            self.transform = transforms.Compose([
+                transforms.Resize(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=rgb_mean, std=rgb_std)
+            ])
+        else:
+            self.transform = transform
+
+        # Create/load dictionaries containing shape/texture/color classifications for each image
+        try:
+            # Load dictionaries
+            self.all_stims = json.load(open('fake_stimulus_classes.json'))  # Dictionary of dictionaries
+
+        except FileNotFoundError:
+
+            # Create dictionaries
+            for image_dir in glob.glob(fake_dir + '/*.png'):
+                image = image_dir.split('/')[2]  # file name
+                specs = image.replace('.png', '').split('_')  # [shape, texture, color]
+
+                if 'x' in specs or 'X' in specs:
+                    os.remove(image_dir)
+                    continue
+                else:
+                    self.all_stims[image] = {}
+                    self.all_stims[image]['shape'] = specs[0]
+                    self.all_stims[image]['texture'] = specs[1]
+                    self.all_stims[image]['color'] = specs[2]
+                    self.all_stims[image]['dir'] = image_dir
+
+            # Save dictionary as a JSON file
+            with open('fake_stimulus_classes.json', 'w') as file:
+                json.dump(self.all_stims, file)
+
+        # Generate/load trials
+        try:
+            # Load trials
+            self.trials_by_image = json.load(open('fake_trials.json'))
+            self.all_trials = self.trials_by_image['all']
+            self.trials_by_image.pop('all')
+
+        except FileNotFoundError:
+
+            # Generate trials
+            for image in self.all_stims.keys():  # Iterate over anchor images
+                shape = self.all_stims[image]['shape']
+                texture = self.all_stims[image]['texture']
+                color = self.all_stims[image]['color']
+
+                self.trials_by_image[image] = {}
+                self.trials_by_image[image]['shape matches'] = []
+                self.trials_by_image[image]['texture matches'] = []
+                self.trials_by_image[image]['color matches'] = []
+                self.trials_by_image[image]['trials'] = []
+
+                # Find shape/texture/color matches
+                for shape_match in self.all_stims.keys():
+                    shape2 = self.all_stims[shape_match]['shape']
+                    texture2 = self.all_stims[shape_match]['texture']
+                    color2 = self.all_stims[shape_match]['color']
+                    if shape_match == image or shape != shape2:  # Same image or different shape
+                        continue
+                    elif texture == texture2 or color == color2:  # Same texture or color
+                        continue
+                    self.trials_by_image[image]['shape matches'].append(shape_match)
+                for texture_match in self.all_stims.keys():
+                    shape2 = self.all_stims[texture_match]['shape']
+                    texture2 = self.all_stims[texture_match]['texture']
+                    color2 = self.all_stims[texture_match]['color']
+                    if texture_match == image or texture != texture2:
+                        continue
+                    elif shape == shape2 or color == color2:
+                        continue
+                    self.trials_by_image[image]['texture matches'].append(texture_match)
+                for color_match in self.all_stims.keys():
+                    shape2 = self.all_stims[color_match]['shape']
+                    texture2 = self.all_stims[color_match]['texture']
+                    color2 = self.all_stims[color_match]['color']
+                    if color_match == image or color != color2:
+                        continue
+                    elif shape == shape2 or texture == texture2:
+                        continue
+                    self.trials_by_image[image]['color matches'].append(color_match)
+
+                # Create trials
+                for shape_match in self.trials_by_image[image]['shape matches']:
+                    for texture_match in self.trials_by_image[image]['texture matches']:
+                        if texture_match == shape_match:
+                            continue
+                        for color_match in self.trials_by_image[image]['color matches']:
+                            if color_match == texture_match or color_match == shape_match:
+                                continue
+                            trial = [image, shape_match, texture_match, color_match]
+                            self.trials_by_image[image]['trials'].append(trial)
+                            self.all_trials.append(trial)
+
+            self.trials_by_image['all'] = self.all_trials
+
+            # Save dictionary as a JSON file
+            with open('fake_trials.json', 'w') as file:
+                json.dump(self.trials_by_image, file)
+
+    def getitem(self, trial):
+        """For a given (anchor, shape match, texture match, color match) trial, loads and returns
+        all 4 images. For a given singular index, returns just that image corresponding to that
+        index.
+
+        :param trial: a length-4 list containing the name of an anchor, shape match, texture match,
+            and color match (self.all_trials is a list of such lists) OR a singular integer index.
+        :return: the anchor, shape match, texture match, and color match images with transforms
+            applied."""
+
+        if isinstance(trial, int):
+            name = list(self.all_stims.keys())[trial]
+            path = self.all_stims[name]['dir']
+
+            im = Image.open(path).convert('RGB')
+
+            if self.transform:
+                im = self.transform(im)
+
+            return im, name
+
+        else:
+            anchor_path = self.all_stims[trial[0]]['dir']
+            shape_path = self.all_stims[trial[1]]['dir']
+            texture_path = self.all_stims[trial[2]]['dir']
+            color_path = self.all_stims[trial[3]]['dir']
+
+            # Load images
+            anchor_im = Image.open(anchor_path)
+            shape_im = Image.open(shape_path)
+            texture_im = Image.open(texture_path)
+            color_im = Image.open(color_path)
+
+            # Apply transforms
+            if self.transform:
+                anchor_im = self.transform(anchor_im)
+                shape_im = self.transform(shape_im)
+                texture_im = self.transform(texture_im)
+                color_im = self.transform(color_im)
+
+            return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0), color_im.unsqueeze(0)
