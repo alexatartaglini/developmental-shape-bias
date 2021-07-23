@@ -241,17 +241,16 @@ def plot_similarity_bar(g, f):
     :param f: True if using the artificial stimuli dataset."""
 
     if f:
-        model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'alexnet', 'vgg16', 'saycam', 'saycamA',
+        model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'saycam', 'saycamA',
                        'saycamS', 'saycamY']
-        model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'AlexNet', 'VGG-16', 'ImageNet SAYCAM',
-                        'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
-    else:
-        model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'alexnet', 'vgg16', 'clipRN50', 'clipViTB32', 'saycam',
-                       'saycamA',
-                       'saycamS', 'saycamY']
-        model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'AlexNet', 'VGG-16', 'CLIP-ResNet50',
-                        'CLIP-ViTB/32',
+        model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet', 'VGG-16',
                         'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
+    else:
+        model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50',
+                       'clipViTB32', 'saycam', 'saycamA', 'saycamS', 'saycamY']
+        model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet',
+                        'VGG-16', 'CLIP-ResNet50', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S',
+                        'SAYCAM-Y']
 
     if f:
         sub = 'fake'
@@ -288,7 +287,6 @@ def plot_similarity_bar(g, f):
         measures2 = ['shape cos', 'texture cos', 'color cos',
                      'shape dot', 'texture dot', 'color dot',
                      'shape ed', 'texture ed', 'color ed']
-        num_measures = 9
     else:
         measures = [['shape cos', 'texture cos'],
                     ['shape dot', 'texture dot'],
@@ -296,7 +294,6 @@ def plot_similarity_bar(g, f):
         measures2 = ['shape cos', 'texture cos',
                      'shape dot', 'texture dot',
                      'shape ed', 'texture ed']
-        num_measures = 6
 
     proportions2 = {key: np.zeros(len(model_types)).tolist() for key in measures2}
     for i in range(3):

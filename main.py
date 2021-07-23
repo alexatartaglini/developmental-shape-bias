@@ -1,3 +1,4 @@
+import sys
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
@@ -86,7 +87,7 @@ def get_embeddings(dir, model, model_type, t, g):
             or model_type == 'saycamY':
         modules = list(model.module.children())[:-1]
         penult_model = nn.Sequential(*modules)
-    elif model_type == 'resnet50' or model_type == 'mocov2':
+    elif model_type == 'resnet50' or model_type == 'mocov2' or model_type == 'swav':
         modules = list(model.children())[:-1]
         penult_model = nn.Sequential(*modules)
     elif model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'dino_resnet50':
@@ -122,20 +123,23 @@ def get_embeddings(dir, model, model_type, t, g):
     return embedding_dict
 
 
-def generate_fake_triplets(model_type, model, shape_dir, n=230431):
-    '''Generates fake embeddings that have the same dimensionality as
+def generate_fake_triplets(model_type, model, shape_dir, t, g, n=230431):
+    """Generates fake embeddings that have the same dimensionality as
      model_type for n triplets, then calculates cosine similarity & dot product
      statistics.
 
      :param model_type: resnet50, saycam, etc.
      :param n: number of fake triplets to generate. Default is the number of
-               triplets the real models see.'''
+               triplets the real models see.
+     :param t: true if doing triplet simulations
+     :param g: true if using grayscale Geirhos dataset
+     :param n: number of triplets to generate"""
 
     # Retrieve embedding magnitude statistics from the real model
     try:
         embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
     except FileNotFoundError:
-        embeddings = get_embeddings(shape_dir, model, model_type)
+        embeddings = get_embeddings(shape_dir, model, model_type, t, g)
 
     avg = 0
     num_embeddings = 0
@@ -222,7 +226,7 @@ def generate_fake_triplets(model_type, model, shape_dir, n=230431):
             results.at[t, 'Texture Cos Closer'] = 1
 
     results.to_csv('results/' + model_type +'/similarity/fake/fake.csv')
-    calculate_similarity_totals(model_type, fake=True)
+    calculate_similarity_totals(model_type, f, g)
 
 
 def triplets(model_type, embeddings, verbose, g, shape_dir):
@@ -593,7 +597,11 @@ if __name__ == '__main__':
             model = models.alexnet(pretrained=True)
         elif model_type == 'vgg16':
             model = models.vgg16(pretrained=True)
-
+        elif model_type == 'swav':
+            model = torch.hub.load('facebookresearch/swav', 'resnet50')
+        else:
+            print('The model ' + model_type + ' has not yet been defined. Please see main.py')
+            sys.exit()
 
         # Put model in evaluation mode
         model.eval()
