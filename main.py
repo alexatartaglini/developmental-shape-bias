@@ -123,7 +123,7 @@ def get_embeddings(dir, model, model_type, t, g):
     return embedding_dict
 
 
-def generate_fake_triplets(model_type, model, shape_dir, t, g, n=230431):
+def generate_fake_triplets(model_type, model, shape_dir, t, g, f, n=230431):
     """Generates fake embeddings that have the same dimensionality as
      model_type for n triplets, then calculates cosine similarity & dot product
      statistics.
@@ -133,6 +133,7 @@ def generate_fake_triplets(model_type, model, shape_dir, t, g, n=230431):
                triplets the real models see.
      :param t: true if doing triplet simulations
      :param g: true if using grayscale Geirhos dataset
+     :param f: true if using artificial dataset
      :param n: number of triplets to generate"""
 
     # Retrieve embedding magnitude statistics from the real model
@@ -413,6 +414,9 @@ def fake_stimuli(model_type, embeddings, verbose):
         anchor_trials = all_trials[anchor]['trials']
         num_trials = len(anchor_trials)
 
+        if num_trials == 0:
+            continue
+
         df = pd.DataFrame(index=range(num_trials), columns=columns)
         df['Anchor'] = anchor
         df['Model'] = model_type
@@ -435,6 +439,12 @@ def fake_stimuli(model_type, embeddings, verbose):
             shape_output = torch.FloatTensor(embeddings[shape_match])
             texture_output = torch.FloatTensor(embeddings[texture_match])
             color_output = torch.FloatTensor(embeddings[color_match])
+
+            if model_type == 'clipRN50' or model_type == 'clipViTB32':
+                anchor_output = torch.squeeze(anchor_output, 0)
+                shape_output = torch.squeeze(shape_output, 0)
+                texture_output = torch.squeeze(texture_output, 0)
+                color_output = torch.squeeze(color_output, 0)
 
             # Cosine similarity
             shape_cos = cosx(anchor_output, shape_output)
@@ -505,14 +515,235 @@ def fake_stimuli(model_type, embeddings, verbose):
         df.to_csv('results/' + model_type + '/fake/' + anchor[:-4] + '.csv', index=False)
 
 
-if __name__ == '__main__':
-    """Passes images one at a time through a given model and stores/plots the results
+def initialize_model(model_type):
+    """Initializes the model and puts it into evaluation mode. Returns the model.
+
+    :param model_type: resnet50, saycam, etc.
+
+    :return: the loaded model in evaluation mode."""
+
+    if model_type == 'saycam':
+        # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
+        model = models.resnext50_32x4d(pretrained=True)
+        model.fc = nn.Linear(in_features=2048, out_features=1000, bias=True)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
+                                map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'])
+    elif model_type == 'mocov2':  # Pre-trained (800 epochs) ResNet-50, MoCoV2
+        model = models.resnet50(pretrained=False)
+        checkpoint = torch.load('models/moco_v2_800ep_pretrain.pth.tar',
+                                map_location=torch.device('cpu'))['state_dict']
+
+        for k in list(checkpoint.keys()):
+            # retain only encoder_q up to before the embedding layer
+            if k.startswith('module.encoder_q') and not k.startswith('module.encoder_q.fc'):
+                # remove prefix
+                checkpoint[k[len("module.encoder_q."):]] = checkpoint[k]
+            # delete renamed or unused k
+            del checkpoint[k]
+
+        model.load_state_dict(checkpoint, strict=False)
+    elif model_type == 'saycamA':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-A.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    elif model_type == 'saycamS':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-S.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    elif model_type == 'saycamY':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-Y.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    elif model_type == 'resnet50':
+        model = models.resnet50(pretrained=True)
+    elif model_type == 'clipRN50':
+        model, _ = clip.load('RN50', device='cpu')
+    elif model_type == 'clipViTB32':
+        model, _ = clip.load('ViT-B/32', device='cpu')
+    elif model_type == 'dino_resnet50':
+        model = torch.hub.load('facebookresearch/dino:main', 'dino_resnet50')
+    elif model_type == 'alexnet':
+        model = models.alexnet(pretrained=True)
+    elif model_type == 'vgg16':
+        model = models.vgg16(pretrained=True)
+    elif model_type == 'swav':
+        model = torch.hub.load('facebookresearch/swav', 'resnet50')
+    else:
+        print('The model ' + model_type + ' has not yet been defined. Please see main.py')
+        sys.exit()
+
+    # Put model in evaluation mode
+    model.eval()
+    return model
+
+
+def run_simulations(args, model_type):
+    """By default: passes images one at a time through a given model and stores/plots the results
     (the shape/texture of the image, the classification made, and whether or not
     the classifcation was a shape classification, a texture classification, or neither.)
-    
-    By default, the model is the SAYCAM-trained resnext model, and the dataset is the
-    Geirhos ImageNet style-transfer dataset. These options can be changed when running
-    this program in the terminal by using the -m and -d flags."""
+
+    If t flag: runs triplet simulations using the Geirhos dataset
+               (see documentation for the triplets function).
+    If f flag: runs quadruplet simulations using Brenden Lake's artificial stimulus dataset
+               (see documentation for the fake_stimuli function).
+    If g flag: runs simulations using a grayscale version of the Geirhos dataset.
+
+    By default, the model is the SAYCAM-trained resnext model. This can be changed when running
+    this program in the terminal by using -m 'model_type' or the --all flag, which will run
+    desired simulations for all available models.
+
+    :param args: command line arguments
+    :param model_type: the type of model, saycam by default. Try -m 'resnet50' to change,
+        for example."""
+
+    batch_size = 1
+    shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
+    plot = args.plot
+    verbose = args.verbose
+    t = args.triplets
+    f = args.fake
+    g = args.grayscale
+
+    if g:
+        shape_dir = 'stimuli-shape/style-transfer-gray'
+    else:
+        shape_dir = 'stimuli-shape/style-transfer'
+    texture_dir = 'stimuli-texture/style-transfer'
+
+    # Initialize the model and put in evaluation mode
+    model = initialize_model(model_type)
+
+    # Create directories for results and plots
+    try:
+        os.mkdir('results/' + model_type)
+    except FileExistsError:
+        pass
+
+    try:
+        os.mkdir('figures/' + model_type)
+    except FileExistsError:
+        pass
+
+    # Run simulations
+    if t:
+        if g:
+            try:
+                os.mkdir('results/' + model_type + '/grayscale')
+            except FileExistsError:
+                pass
+
+            try:
+                embeddings = json.load(open('embeddings/' + model_type + '_gray.json'))
+            except FileNotFoundError:
+                embeddings = get_embeddings(shape_dir, model, model_type, t, g)
+        else:
+            try:
+                os.mkdir('results/' + model_type + '/similarity')
+            except FileExistsError:
+                pass
+
+            try:
+                embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
+            except FileNotFoundError:
+                embeddings = get_embeddings(shape_dir, model, model_type, t, g)
+
+        triplets(model_type, embeddings, verbose, g, shape_dir)
+        calculate_similarity_totals(model_type, f, g)
+
+        if plot:
+            plot_similarity_histograms(model_type, g)
+            plot_norm_histogram(model_type, f, g)
+
+    elif f:
+        try:
+            os.mkdir('results/' + model_type + '/fake')
+        except FileExistsError:
+            pass
+
+        try:
+            os.mkdir('figures/' + model_type + '/fake')
+        except FileExistsError:
+            pass
+
+        try:
+            embeddings = json.load(open('embeddings/' + model_type + '_fake.json'))
+        except FileNotFoundError:
+            embeddings = get_embeddings('', model, model_type, t, g)
+
+        fake_stimuli(model_type, embeddings, verbose)
+        calculate_similarity_totals(model_type, f, g)
+
+    else:
+        shape_dict = dict.fromkeys(shape_categories)  # for storing the results
+        shape_categories0 = [shape + '0' for shape in shape_categories]
+        shape_dict0 = dict.fromkeys(shape_categories0)
+
+        shape_spec_dict = dict.fromkeys(shape_categories)  # contains lists of specific textures for each shape
+        for shape in shape_categories:
+            shape_dict[shape] = shape_dict0.copy()
+            shape_spec_dict[shape] = []
+
+        # Load and process the images using my custom Geirhos style transfer dataset class
+        style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
+        style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
+        if not os.path.isdir('stimuli-texture'):
+            style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
+
+        # Obtain ImageNet - Geirhos mapping
+        mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
+        softmax = nn.Softmax(dim=1)
+        softmax2 = nn.Softmax(dim=0)
+
+        with torch.no_grad():
+            # Pass images into the model one at a time
+            for batch in style_transfer_dataloader:
+                im, im_dir, shape, texture, shape_spec, texture_spec = batch
+
+                # hack to extract vars
+                im_dir = im_dir[0]
+                shape = shape[0]
+                texture = texture[0]
+                shape_spec = shape_spec[0]
+                texture_spec = texture_spec[0]
+
+                output = model(im)
+                soft_output = softmax(output).detach().numpy().squeeze()
+
+                decision, class_values = mapping.probabilities_to_decision(soft_output)
+
+                shape_idx = shape_categories.index(shape)
+                texture_idx = shape_categories.index(texture)
+                if class_values[shape_idx] > class_values[texture_idx]:
+                    decision_idx = shape_idx
+                else:
+                    decision_idx = texture_idx
+                decision_restricted = shape_categories[decision_idx]
+                restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
+                restricted_class_values = softmax2(restricted_class_values)
+
+                if verbose:
+                    print('Decision for ' + im_dir + ': ' + decision)
+                    print('\tRestricted decision: ' + decision_restricted)
+                if plot:
+                    plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
+
+                shape_dict[shape][texture_spec + '0'] = [decision, class_values,
+                                                         decision_restricted, restricted_class_values]
+                shape_spec_dict[shape].append(texture_spec)
+
+            csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
+            calculate_totals(shape_categories, 'results/' + model_type, verbose)
+            calculate_proportions('results/' + model_type, verbose)
+
+
+if __name__ == '__main__':
+    """This file is used to load models, retrieve image embeddings, and run simulations.
+    See the documentation for each function above for more information."""
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model', help='Example: saycam, resnet50', required=False, default='saycam')
@@ -524,206 +755,23 @@ if __name__ == '__main__':
                         required=False, action='store_true')
     parser.add_argument('-g', '--grayscale', help='Runs simulations with a grayscale version of the Geirhos dataset.',
                         required=False, action='store_true')
-    parser.add_argument('--all', help='Generates proportion histograms and summaries for all models for which'
-                                      'results have been computed.', required=False, action='store_true')
+    parser.add_argument('--all', help='Generates plots, summaries, or results for all models.', required=False, action='store_true')
     args = parser.parse_args()
 
-    batch_size = 1
-    shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
+    a = args.all
     plot = args.plot
-    verbose = args.verbose
-    t = args.triplets
-    f = args.fake
-    g = args.grayscale
-    all = args.all
 
-    if all:
-        plot_similarity_bar(g, f)
+    if a:
+        if not plot:
+            model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipViTB32',
+                      'dino_resnet50', 'alexnet', 'vgg16', 'swav', 'mocov2']
+
+            for model_type in model_list:
+                print("Running simulations for {0}".format(model_type))
+                run_simulations(args, model_type)
+        else:
+            g = args.grayscale
+            f = args.fake
+            plot_similarity_bar(g, f)
     else:
-        if g:
-            shape_dir = 'stimuli-shape/style-transfer-gray'
-        else:
-            shape_dir = 'stimuli-shape/style-transfer'
-        texture_dir = 'stimuli-texture/style-transfer'
-
-        model_type = args.model  # 'saycam' or 'resnet50'
-
-        if model_type == 'saycam':
-            # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
-            model = models.resnext50_32x4d(pretrained=True)
-            model.fc = nn.Linear(in_features=2048, out_features=1000, bias=True)
-            model = nn.DataParallel(model)
-            checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
-                                    map_location=torch.device('cpu'))
-            model.load_state_dict(checkpoint['model_state_dict'])
-        elif model_type == 'mocov2':  # Pre-trained (800 epochs) ResNet-50, MoCoV2
-            model = models.resnet50(pretrained=False)
-            checkpoint = torch.load('models/moco_v2_800ep_pretrain.pth.tar',
-                                    map_location=torch.device('cpu'))['state_dict']
-
-            for k in list(checkpoint.keys()):
-                # retain only encoder_q up to before the embedding layer
-                if k.startswith('module.encoder_q') and not k.startswith('module.encoder_q.fc'):
-                    # remove prefix
-                    checkpoint[k[len("module.encoder_q."):]] = checkpoint[k]
-                # delete renamed or unused k
-                del checkpoint[k]
-
-            model.load_state_dict(checkpoint, strict=False)
-        elif model_type == 'saycamA':
-            model = models.resnext50_32x4d(pretrained=False)
-            model = nn.DataParallel(model)
-            checkpoint = torch.load('models/TC-A.tar', map_location=torch.device('cpu'))
-            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        elif model_type == 'saycamS':
-            model = models.resnext50_32x4d(pretrained=False)
-            model = nn.DataParallel(model)
-            checkpoint = torch.load('models/TC-S.tar', map_location=torch.device('cpu'))
-            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        elif model_type == 'saycamY':
-            model = models.resnext50_32x4d(pretrained=False)
-            model = nn.DataParallel(model)
-            checkpoint = torch.load('models/TC-Y.tar', map_location=torch.device('cpu'))
-            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-        elif model_type == 'resnet50':
-            model = models.resnet50(pretrained=True)
-        elif model_type == 'clipRN50':
-            model, _ = clip.load('RN50', device='cpu')
-        elif model_type == 'clipViTB32':
-            model, _ = clip.load('ViT-B/32', device='cpu')
-        elif model_type == 'dino_resnet50':
-            model = torch.hub.load('facebookresearch/dino:main', 'dino_resnet50')
-        elif model_type == 'alexnet':
-            model = models.alexnet(pretrained=True)
-        elif model_type == 'vgg16':
-            model = models.vgg16(pretrained=True)
-        elif model_type == 'swav':
-            model = torch.hub.load('facebookresearch/swav', 'resnet50')
-        else:
-            print('The model ' + model_type + ' has not yet been defined. Please see main.py')
-            sys.exit()
-
-        # Put model in evaluation mode
-        model.eval()
-
-        # Create directories for results and plots
-        try:
-            os.mkdir('results/' + model_type)
-        except FileExistsError:
-            pass
-
-        try:
-            os.mkdir('figures/' + model_type)
-        except FileExistsError:
-            pass
-
-        # Run simulations
-        if t:
-            if g:
-                try:
-                    os.mkdir('results/' + model_type + '/grayscale')
-                except FileExistsError:
-                    pass
-
-                try:
-                    embeddings = json.load(open('embeddings/' + model_type + '_gray.json'))
-                except FileNotFoundError:
-                    embeddings = get_embeddings(shape_dir, model, model_type, t, g)
-            else:
-                try:
-                    os.mkdir('results/' + model_type + '/similarity')
-                except FileExistsError:
-                    pass
-
-                try:
-                    embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
-                except FileNotFoundError:
-                    embeddings = get_embeddings(shape_dir, model, model_type, t, g)
-
-            triplets(model_type, embeddings, verbose, g, shape_dir)
-            calculate_similarity_totals(model_type, f, g)
-
-            if plot:
-                plot_similarity_histograms(model_type, g)
-                plot_norm_histogram(model_type, f, g)
-
-        elif f:
-            try:
-                os.mkdir('results/' + model_type +'/fake')
-            except FileExistsError:
-                pass
-
-            try:
-                os.mkdir('figures/' + model_type +'/fake')
-            except FileExistsError:
-                pass
-
-            try:
-                embeddings = json.load(open('embeddings/' + model_type + '_fake.json'))
-            except FileNotFoundError:
-                embeddings = get_embeddings('', model, model_type, t, g)
-
-            fake_stimuli(model_type, embeddings, verbose)
-            calculate_similarity_totals(model_type, f, g)
-
-        else:
-            shape_dict = dict.fromkeys(shape_categories)  # for storing the results
-            shape_categories0 = [shape + '0' for shape in shape_categories]
-            shape_dict0 = dict.fromkeys(shape_categories0)
-
-            shape_spec_dict = dict.fromkeys(shape_categories)  # contains lists of specific textures for each shape
-            for shape in shape_categories:
-                shape_dict[shape] = shape_dict0.copy()
-                shape_spec_dict[shape] = []
-
-            # Load and process the images using my custom Geirhos style transfer dataset class
-            style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
-            style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
-            if not os.path.isdir('stimuli-texture'):
-                style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
-
-            # Obtain ImageNet - Geirhos mapping
-            mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
-            softmax = nn.Softmax(dim=1)
-            softmax2 = nn.Softmax(dim=0)
-
-            with torch.no_grad():
-                # Pass images into the model one at a time
-                for batch in style_transfer_dataloader:
-                    im, im_dir, shape, texture, shape_spec, texture_spec = batch
-
-                    # hack to extract vars
-                    im_dir = im_dir[0]
-                    shape = shape[0]
-                    texture = texture[0]
-                    shape_spec = shape_spec[0]
-                    texture_spec = texture_spec[0]
-
-                    output = model(im)
-                    soft_output = softmax(output).detach().numpy().squeeze()
-
-                    decision, class_values = mapping.probabilities_to_decision(soft_output)
-
-                    shape_idx = shape_categories.index(shape)
-                    texture_idx = shape_categories.index(texture)
-                    if class_values[shape_idx] > class_values[texture_idx]:
-                        decision_idx = shape_idx
-                    else:
-                        decision_idx = texture_idx
-                    decision_restricted = shape_categories[decision_idx]
-                    restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
-                    restricted_class_values = softmax2(restricted_class_values)
-
-                    if verbose:
-                        print('Decision for ' + im_dir + ': ' + decision)
-                        print('\tRestricted decision: ' + decision_restricted)
-                    if plot:
-                        plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
-
-                    shape_dict[shape][texture_spec + '0'] = [decision, class_values,
-                                                        decision_restricted, restricted_class_values]
-                    shape_spec_dict[shape].append(texture_spec)
-
-                csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
-                calculate_totals(shape_categories, 'results/' + model_type, verbose)
-                calculate_proportions('results/' + model_type, verbose)
+        run_simulations(args, args.model)

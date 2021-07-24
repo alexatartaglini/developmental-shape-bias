@@ -240,17 +240,11 @@ def plot_similarity_bar(g, f):
     :param g: True if using the grayscale Geirhos dataset.
     :param f: True if using the artificial stimuli dataset."""
 
-    if f:
-        model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'saycam', 'saycamA',
-                       'saycamS', 'saycamY']
-        model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet', 'VGG-16',
-                        'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
-    else:
-        model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50',
-                       'clipViTB32', 'saycam', 'saycamA', 'saycamS', 'saycamY']
-        model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet',
-                        'VGG-16', 'CLIP-ResNet50', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S',
-                        'SAYCAM-Y']
+    model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50',
+                    'clipViTB32', 'saycam', 'saycamA', 'saycamS', 'saycamY']
+    model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet',
+                    'VGG-16', 'CLIP-ResNet50', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S',
+                    'SAYCAM-Y']
 
     if f:
         sub = 'fake'
