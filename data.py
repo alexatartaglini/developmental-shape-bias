@@ -1,4 +1,5 @@
 import os
+import torch
 from torch.utils.data import Dataset
 import numpy as np
 from torchvision import transforms
@@ -425,6 +426,25 @@ class FakeStimTrials:
             with open('fake_trials.json', 'w') as file:
                 json.dump(self.trials_by_image, file)
 
+    def make_square(self, im, min_size=224, fill_color=(255, 255, 255)):
+        """This function pads rectangular images with white space.
+
+        :param im: input image
+        :param min_size: the minimum size that an image should be
+        :param fill_color: by default, white"""
+
+        """        x, y = im.size
+        size = max(min_size, x, y)
+        new_im = Image.new('RGBA', (size, size), fill_color)
+        new_im.paste(im, (int((size - x) / 2), int((size - y) / 2)))"""
+
+        x, y = im.size
+        size = max(min_size, x, y)
+        im.load()  # needed for split()
+        new_im = Image.new('RGB', (size, size), fill_color)
+        new_im.paste(im, (int((size - x) / 2), int((size - y) / 2)), mask=im.split()[3])
+        return new_im
+
     def getitem(self, trial):
         """For a given (anchor, shape match, texture match, color match) trial, loads and returns
         all 4 images. For a given singular index, returns just that image corresponding to that
@@ -439,7 +459,8 @@ class FakeStimTrials:
             name = list(self.all_stims.keys())[trial]
             path = self.all_stims[name]['dir']
 
-            im = Image.open(path).convert('RGB')
+            im = Image.open(path)
+            im = self.make_square(im)
 
             if self.transform:
                 im = self.transform(im)
