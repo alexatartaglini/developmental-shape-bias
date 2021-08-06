@@ -200,11 +200,13 @@ def plot_norm_histogram(model_type, f, g):
         pass
 
     plot_dir += '/'
+    b = 30  # Number of bins
 
     # Load embeddings
     if f:
         embedding_dir = 'embeddings/' + model_type + '_fake.json'
         fig_dir = plot_dir + model_type + '_fake.png'
+        b = 30
     elif g:
         embedding_dir = 'embeddings/' + model_type + '_gray.json'
         fig_dir = plot_dir + model_type + '_gray.png'
@@ -226,7 +228,7 @@ def plot_norm_histogram(model_type, f, g):
     fig.set_figheight(6)
     fig.set_figwidth(9)
 
-    y, x, _ = ax.hist(norms, color='#ff7694', bins=30)
+    y, x, _ = ax.hist(norms, color='#ff7694', bins=b)
     plt.title('Histogram of Embedding Norms: ' + model_type)
     plt.tight_layout()
 
@@ -240,11 +242,11 @@ def plot_similarity_bar(g, f):
     :param g: True if using the grayscale Geirhos dataset.
     :param f: True if using the artificial stimuli dataset."""
 
-    model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50',
+    model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50', 'clipRN50x4',
                     'clipViTB32', 'saycam', 'saycamA', 'saycamS', 'saycamY']
     model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet',
-                    'VGG-16', 'CLIP-ResNet50', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S',
-                    'SAYCAM-Y']
+                    'VGG-16', 'CLIP-ResNet50', 'CLIP-ResNet50x4', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A',
+                    'SAYCAM-S', 'SAYCAM-Y']
 
     if f:
         sub = 'fake'

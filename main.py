@@ -71,14 +71,20 @@ def get_embeddings(dir, model, model_type, t, g):
 
     # Initialize dataset
     if t:
-        dataset = GeirhosStyleTransferDataset(dir, '')
+        if model_type == 'clipRN50x4':
+            dataset = GeirhosStyleTransferDataset(dir, '', im_size=288)
+        else:
+            dataset = GeirhosStyleTransferDataset(dir, '')
         num_images = dataset.__len__()
         if g:
             embedding_dir = 'embeddings/' + model_type + '_gray.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
-        trials = FakeStimTrials()
+        if model_type == 'clipRN50x4':
+            trials = FakeStimTrials(im_shape=288)
+        else:
+            trials = FakeStimTrials()
         num_images = len(trials.all_stims.keys())
         embedding_dir = 'embeddings/' + model_type + '_fake.json'
 
@@ -90,7 +96,8 @@ def get_embeddings(dir, model, model_type, t, g):
     elif model_type == 'resnet50' or model_type == 'mocov2' or model_type == 'swav':
         modules = list(model.children())[:-1]
         penult_model = nn.Sequential(*modules)
-    elif model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'dino_resnet50':
+    elif model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'dino_resnet50'\
+            or model_type == 'clipRN50x4':
         penult_model = model
     elif model_type == 'alexnet' or model_type == 'vgg16':
         new_classifier = nn.Sequential(*list(model.classifier.children())[:-1])
@@ -110,7 +117,7 @@ def get_embeddings(dir, model, model_type, t, g):
             im = im.unsqueeze(0)
 
             # Pass image into model
-            if model_type == 'clipRN50' or model_type == 'clipViTB32':
+            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4':
                 embedding = penult_model.encode_image(im)
             else:
                 embedding = penult_model(im).numpy().squeeze()
@@ -306,7 +313,8 @@ def triplets(model_type, embeddings, verbose, g, shape_dir):
             shape_output = torch.FloatTensor(embeddings[shape_match])
             texture_output = torch.FloatTensor(embeddings[texture_match])
 
-            if anchor_output.shape == (1,1024) or anchor_output.shape == (1,512):
+            if anchor_output.shape == (1,1024) or anchor_output.shape == (1,512) \
+                    or anchor_output.shape == (1, 640):
                 anchor_output = torch.squeeze(anchor_output, 0)
                 shape_output = torch.squeeze(shape_output, 0)
                 texture_output = torch.squeeze(texture_output, 0)
@@ -440,7 +448,7 @@ def fake_stimuli(model_type, embeddings, verbose):
             texture_output = torch.FloatTensor(embeddings[texture_match])
             color_output = torch.FloatTensor(embeddings[color_match])
 
-            if model_type == 'clipRN50' or model_type == 'clipViTB32':
+            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4':
                 anchor_output = torch.squeeze(anchor_output, 0)
                 shape_output = torch.squeeze(shape_output, 0)
                 texture_output = torch.squeeze(texture_output, 0)
@@ -563,6 +571,8 @@ def initialize_model(model_type):
         model = models.resnet50(pretrained=True)
     elif model_type == 'clipRN50':
         model, _ = clip.load('RN50', device='cpu')
+    elif model_type == 'clipRN50x4':
+        model, _ = clip.load('RN50x4', device='cpu')
     elif model_type == 'clipViTB32':
         model, _ = clip.load('ViT-B/32', device='cpu')
     elif model_type == 'dino_resnet50':
@@ -761,11 +771,11 @@ if __name__ == '__main__':
     a = args.all
     plot = args.plot
 
+    model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
+                  'clipViTB32', 'dino_resnet50', 'alexnet', 'vgg16', 'swav', 'mocov2']
+
     if a:
         if not plot:
-            model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipViTB32',
-                      'dino_resnet50', 'alexnet', 'vgg16', 'swav', 'mocov2']
-
             for model_type in model_list:
                 print("Running simulations for {0}".format(model_type))
                 run_simulations(args, model_type)
@@ -773,5 +783,9 @@ if __name__ == '__main__':
             g = args.grayscale
             f = args.fake
             plot_similarity_bar(g, f)
+
+            for model_type in model_list:
+                print("Plotting norm histograms for {0}".format(model_type))
+                plot_norm_histogram(model_type, f, g)
     else:
         run_simulations(args, args.model)
