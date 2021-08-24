@@ -44,14 +44,14 @@ def get_penultimate_layer(model, image):
     return activations
 
 
-def get_embeddings(dir, model, model_type, t, g):
+def get_embeddings(dir, penult_model, model_type, t, g):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
     file (model_type_embeddings.json)
 
     :param dir: path of the dataset
-    :param model: the model to extract the embeddings from
+    :param model: the model to extract the embeddings from with the last layer removed
     :param model_type: the type of model, eg. saycam, resnet50, etc.
     :param t: true if running triplet simulations
     :param g: true if using grayscale Geirhos dataset
@@ -75,50 +75,29 @@ def get_embeddings(dir, model, model_type, t, g):
             dataset = GeirhosStyleTransferDataset(dir, '', im_size=288)
         else:
             dataset = GeirhosStyleTransferDataset(dir, '')
-        num_images = dataset.__len__()
         if g:
             embedding_dir = 'embeddings/' + model_type + '_gray.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
         if model_type == 'clipRN50x4':
-            trials = FakeStimTrials(im_shape=288)
+            dataset = FakeStimTrials(im_shape=288)
         else:
-            trials = FakeStimTrials()
-        num_images = len(trials.all_stims.keys())
+            dataset = FakeStimTrials()
         embedding_dir = 'embeddings/' + model_type + '_fake.json'
 
-    # Remove the final layer from the model
-    if model_type == 'saycam' or model_type == 'saycamA' or model_type == 'saycamS'\
-            or model_type == 'saycamY':
-        modules = list(model.module.children())[:-1]
-        penult_model = nn.Sequential(*modules)
-    elif model_type == 'resnet50' or model_type == 'mocov2' or model_type == 'swav':
-        modules = list(model.children())[:-1]
-        penult_model = nn.Sequential(*modules)
-    elif model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'dino_resnet50'\
-            or model_type == 'clipRN50x4':
-        penult_model = model
-    elif model_type == 'alexnet' or model_type == 'vgg16':
-        new_classifier = nn.Sequential(*list(model.classifier.children())[:-1])
-        model.classifier = new_classifier
-        penult_model = model
-
-    for p in penult_model.parameters():
-        p.requires_grad = False
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
     with torch.no_grad():
         # Iterate over images
-        for i in range(num_images):
-            if t:
-                im, name, shape, texture, shape_spec, texture_spec = dataset.__getitem__(i)
-            else:
-                im, name = trials.getitem(i)
-            im = im.unsqueeze(0)
+        for idx, batch in enumerate(data_loader):
+            im = batch[0]
+            name = batch[1][0]
 
             # Pass image into model
             if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4':
                 embedding = penult_model.encode_image(im)
+                embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
             else:
                 embedding = penult_model(im).numpy().squeeze()
 
@@ -525,10 +504,12 @@ def fake_stimuli(model_type, embeddings, verbose):
 
 def initialize_model(model_type):
     """Initializes the model and puts it into evaluation mode. Returns the model.
+    Additionally strips the final layer from the model and returns this as penult_model.
 
     :param model_type: resnet50, saycam, etc.
 
-    :return: the loaded model in evaluation mode."""
+    :return: the loaded model in evaluation mode, as well as the model with the penultimate
+             layer removed."""
 
     if model_type == 'saycam':
         # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
@@ -589,7 +570,24 @@ def initialize_model(model_type):
 
     # Put model in evaluation mode
     model.eval()
-    return model
+
+    # Remove the final layer from the model
+    if model_type == 'saycam' or model_type == 'saycamA' or model_type == 'saycamS'\
+            or model_type == 'saycamY':
+        modules = list(model.module.children())[:-1]
+        penult_model = nn.Sequential(*modules)
+    elif model_type == 'resnet50' or model_type == 'mocov2' or model_type == 'swav':
+        modules = list(model.children())[:-1]
+        penult_model = nn.Sequential(*modules)
+    elif model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'dino_resnet50'\
+            or model_type == 'clipRN50x4':
+        penult_model = model
+    elif model_type == 'alexnet' or model_type == 'vgg16':
+        new_classifier = nn.Sequential(*list(model.classifier.children())[:-1])
+        model.classifier = new_classifier
+        penult_model = model
+
+    return model, penult_model
 
 
 def run_simulations(args, model_type):
@@ -626,7 +624,7 @@ def run_simulations(args, model_type):
     texture_dir = 'stimuli-texture/style-transfer'
 
     # Initialize the model and put in evaluation mode
-    model = initialize_model(model_type)
+    model, penult_model = initialize_model(model_type)
 
     # Create directories for results and plots
     try:
@@ -650,7 +648,7 @@ def run_simulations(args, model_type):
             try:
                 embeddings = json.load(open('embeddings/' + model_type + '_gray.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, model, model_type, t, g)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, t, g)
         else:
             try:
                 os.mkdir('results/' + model_type + '/similarity')
@@ -660,7 +658,7 @@ def run_simulations(args, model_type):
             try:
                 embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, model, model_type, t, g)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, t, g)
 
         triplets(model_type, embeddings, verbose, g, shape_dir)
         calculate_similarity_totals(model_type, f, g)

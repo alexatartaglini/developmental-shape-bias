@@ -1,5 +1,4 @@
 import os
-import torch
 from torch.utils.data import Dataset
 import numpy as np
 from torchvision import transforms
@@ -302,7 +301,7 @@ class GeirhosTriplets:
         return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
 
 
-class FakeStimTrials:
+class FakeStimTrials(Dataset):
     """This class provides a way to generate and access all possible trials of novel,
     artificial stimuli from the stimuli-shape/fake directory. Each stimulus consists of
     a shape, color, and texture. A trial consists of an anchor image, a shape match, a
@@ -447,45 +446,22 @@ class FakeStimTrials:
         new_im.paste(im, (int((size - x) / 2), int((size - y) / 2)), mask=im.split()[3])
         return new_im
 
-    def getitem(self, trial):
-        """For a given (anchor, shape match, texture match, color match) trial, loads and returns
-        all 4 images. For a given singular index, returns just that image corresponding to that
-        index.
+    def __len__(self):
+        return len(self.trials_by_image.keys())
 
-        :param trial: a length-4 list containing the name of an anchor, shape match, texture match,
-            and color match (self.all_trials is a list of such lists) OR a singular integer index.
-        :return: the anchor, shape match, texture match, and color match images with transforms
-            applied."""
+    def __getitem__(self, trial):
+        """For a given singular index, returns the singular image corresponding to that index.
 
-        if isinstance(trial, int):
-            name = list(self.all_stims.keys())[trial]
-            path = self.all_stims[name]['dir']
+        :param trial: a singular integer index.
+        :return: the image with transforms applied and the image name."""
 
-            im = Image.open(path)
-            im = self.make_square(im)
+        name = list(self.all_stims.keys())[trial]
+        path = self.all_stims[name]['dir']
 
-            if self.transform:
-                im = self.transform(im)
+        im = Image.open(path)
+        im = self.make_square(im)
 
-            return im, name
+        if self.transform:
+            im = self.transform(im)
 
-        else:
-            anchor_path = self.all_stims[trial[0]]['dir']
-            shape_path = self.all_stims[trial[1]]['dir']
-            texture_path = self.all_stims[trial[2]]['dir']
-            color_path = self.all_stims[trial[3]]['dir']
-
-            # Load images
-            anchor_im = Image.open(anchor_path)
-            shape_im = Image.open(shape_path)
-            texture_im = Image.open(texture_path)
-            color_im = Image.open(color_path)
-
-            # Apply transforms
-            if self.transform:
-                anchor_im = self.transform(anchor_im)
-                shape_im = self.transform(shape_im)
-                texture_im = self.transform(texture_im)
-                color_im = self.transform(color_im)
-
-            return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0), color_im.unsqueeze(0)
+        return im, name
