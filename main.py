@@ -44,7 +44,7 @@ def get_penultimate_layer(model, image):
     return activations
 
 
-def get_embeddings(dir, penult_model, model_type, t, g):
+def get_embeddings(dir, penult_model, model_type, transform, t, g):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
@@ -53,6 +53,8 @@ def get_embeddings(dir, penult_model, model_type, t, g):
     :param dir: path of the dataset
     :param model: the model to extract the embeddings from with the last layer removed
     :param model_type: the type of model, eg. saycam, resnet50, etc.
+    :param transform: appropriate transforms for the given model (should match training
+                      data stats)
     :param t: true if running triplet simulations
     :param g: true if using grayscale Geirhos dataset
 
@@ -72,18 +74,18 @@ def get_embeddings(dir, penult_model, model_type, t, g):
     # Initialize dataset
     if t:
         if model_type == 'clipRN50x4':
-            dataset = GeirhosStyleTransferDataset(dir, '', im_size=288)
+            dataset = GeirhosStyleTransferDataset(dir, '', transform, im_size=288)
         else:
-            dataset = GeirhosStyleTransferDataset(dir, '')
+            dataset = GeirhosStyleTransferDataset(dir, '', transform)
         if g:
             embedding_dir = 'embeddings/' + model_type + '_gray.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
         if model_type == 'clipRN50x4':
-            dataset = FakeStimTrials(im_shape=288)
+            dataset = FakeStimTrials(transform, im_shape=288)
         else:
-            dataset = FakeStimTrials()
+            dataset = FakeStimTrials(transform)
         embedding_dir = 'embeddings/' + model_type + '_fake.json'
 
     data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
@@ -216,7 +218,7 @@ def generate_fake_triplets(model_type, model, shape_dir, t, g, f, n=230431):
     calculate_similarity_totals(model_type, f, g)
 
 
-def triplets(model_type, embeddings, verbose, g, shape_dir):
+def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
@@ -226,6 +228,8 @@ def triplets(model_type, embeddings, verbose, g, shape_dir):
     essentially provides a secondary measure of shape/texture bias.
 
     :param model_type: resnet50, saycam, etc.
+    :param transform: appropriate transforms for the given model (should match training
+                      data stats)
     :param embeddings: a dictionary of embeddings for each image for the given model
     :param verbose: true if results should be printed to the terminal.
     :param g: true if a grayscale version of the Geirhos dataset should be used.
@@ -243,15 +247,7 @@ def triplets(model_type, embeddings, verbose, g, shape_dir):
                     im_name = im_path.split('/')[3]
                     img.save('stimuli-shape/style-transfer-gray/' + category + '/' + im_name)
 
-        rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/style-transfer-gray', 1, False)
-        gray_transform = transforms.Compose([
-                transforms.Resize(224),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=rgb_mean, std=rgb_std)
-            ])
-        t = GeirhosTriplets(shape_dir, transform=gray_transform)
-    else:
-        t = GeirhosTriplets(shape_dir)  # Default transforms
+    t = GeirhosTriplets(shape_dir, transform)  # Default transforms
 
     images = t.shape_classes.keys()
     all_triplets = t.triplets_by_image
@@ -375,14 +371,28 @@ def triplets(model_type, embeddings, verbose, g, shape_dir):
             df.to_csv('results/' + model_type + '/similarity/' + anchor[:-4] + '.csv', index=False)
 
 
-def fake_stimuli(model_type, embeddings, verbose):
+def fake_stimuli(model_type, transform, embeddings, verbose):
+    """
+    Runs simulations with cartoon dataset quadruplets. The quadruplets consist of an
+    anchor image, a shape match, a color match, and a texture match. Similarity is
+    computed between the anchor image and all three matches, and the match with the
+    highest similarity is considered as a model "choice." Matches are exclusive; eg.
+    the color match does not match the anchor in shape or texture. This function
+    stores the similarities and choices in a CSV.
+
+    :param model_type: resnet50, saycam, etc.
+    :param transform: appropriate transforms for the given model (should match training
+                      data stats)
+    :param embeddings: a dictionary of embeddings for each image for the given model
+    :param verbose: true if results should be printed to the terminal.
+    """
 
     try:
         os.mkdir('results/' + model_type + '/fake')
     except FileExistsError:
         pass
 
-    trials = FakeStimTrials()
+    trials = FakeStimTrials(transform)
     stimuli = trials.all_stims.keys()
     all_trials = trials.trials_by_image
 
@@ -505,11 +515,21 @@ def fake_stimuli(model_type, embeddings, verbose):
 def initialize_model(model_type):
     """Initializes the model and puts it into evaluation mode. Returns the model.
     Additionally strips the final layer from the model and returns this as penult_model.
+    Finally, retrieves the correct transforms for each model and returns them.
 
     :param model_type: resnet50, saycam, etc.
 
-    :return: the loaded model in evaluation mode, as well as the model with the penultimate
-             layer removed."""
+    :return: the loaded model in evaluation mode, the model with the penultimate
+             layer removed, and the correct transforms for the model (using statistics
+             calculated from the specific model's training data)."""
+
+    # These are the ImageNet transforms; most models will use these, but a few redefine them
+    transform = transforms.Compose([
+        transforms.RandomSizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
     if model_type == 'saycam':
         # Load Emin's pretrained SAYCAM model + ImageNet classifier from its .tar file
@@ -551,11 +571,11 @@ def initialize_model(model_type):
     elif model_type == 'resnet50':
         model = models.resnet50(pretrained=True)
     elif model_type == 'clipRN50':
-        model, _ = clip.load('RN50', device='cpu')
+        model, transform = clip.load('RN50', device='cpu')
     elif model_type == 'clipRN50x4':
-        model, _ = clip.load('RN50x4', device='cpu')
+        model, transform = clip.load('RN50x4', device='cpu')
     elif model_type == 'clipViTB32':
-        model, _ = clip.load('ViT-B/32', device='cpu')
+        model, transform = clip.load('ViT-B/32', device='cpu')
     elif model_type == 'dino_resnet50':
         model = torch.hub.load('facebookresearch/dino:main', 'dino_resnet50')
     elif model_type == 'alexnet':
@@ -587,7 +607,7 @@ def initialize_model(model_type):
         model.classifier = new_classifier
         penult_model = model
 
-    return model, penult_model
+    return model, penult_model, transform
 
 
 def run_simulations(args, model_type):
@@ -623,8 +643,8 @@ def run_simulations(args, model_type):
         shape_dir = 'stimuli-shape/style-transfer'
     texture_dir = 'stimuli-texture/style-transfer'
 
-    # Initialize the model and put in evaluation mode
-    model, penult_model = initialize_model(model_type)
+    # Initialize the model and put in evaluation mode; retrieve transforms
+    model, penult_model, transform = initialize_model(model_type)
 
     # Create directories for results and plots
     try:
@@ -648,7 +668,7 @@ def run_simulations(args, model_type):
             try:
                 embeddings = json.load(open('embeddings/' + model_type + '_gray.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, penult_model, model_type, t, g)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
         else:
             try:
                 os.mkdir('results/' + model_type + '/similarity')
@@ -658,7 +678,7 @@ def run_simulations(args, model_type):
             try:
                 embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, penult_model, model_type, t, g)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
 
         triplets(model_type, embeddings, verbose, g, shape_dir)
         calculate_similarity_totals(model_type, f, g)
@@ -683,7 +703,7 @@ def run_simulations(args, model_type):
         except FileNotFoundError:
             embeddings = get_embeddings('', model, model_type, t, g)
 
-        fake_stimuli(model_type, embeddings, verbose)
+        fake_stimuli(model_type, transform, embeddings, verbose)
         calculate_similarity_totals(model_type, f, g)
 
     else:
@@ -697,7 +717,7 @@ def run_simulations(args, model_type):
             shape_spec_dict[shape] = []
 
         # Load and process the images using my custom Geirhos style transfer dataset class
-        style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir)
+        style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir, transform)
         style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
         if not os.path.isdir('stimuli-texture'):
             style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')

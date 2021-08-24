@@ -1,7 +1,6 @@
 import os
 from torch.utils.data import Dataset
 import numpy as np
-from torchvision import transforms
 from PIL import Image
 import shutil
 import json
@@ -53,29 +52,18 @@ def calculate_dataset_stats(path, num_channels, f):
 class GeirhosStyleTransferDataset(Dataset):
     """A custom Dataset class for the Geirhos Style Transfer dataset."""
 
-    def __init__(self, shape_dir, texture_dir, transform=None, im_size=224):
+    def __init__(self, shape_dir, texture_dir, transform, im_size=224):
         """
         :param shape_dir: a directory for the style transfer dataset organized by shape
         :param texture_dir: a directory for the style transfer dataset organized by texture
-        :param transform: a set of image transformations (optional)
+        :param transform: a set of image transformations
         :param im_size: size (pixels) for image resizing (im_size x im_size); 224 by default.
         """
 
         self.shape_dir = shape_dir
         self.texture_dir = texture_dir
         self.shape_classes = {}
-
-        # Default image processing
-        if transform is None:
-            rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/style-transfer', 3, False)
-
-            self.transform = transforms.Compose([
-                transforms.Resize(im_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=rgb_mean, std=rgb_std)
-            ])
-        else:
-            self.transform = transform
+        self.transform = transform
 
         # Create/load dictionaries containing shape and texture classifications for each image
         try:
@@ -180,30 +168,19 @@ class GeirhosTriplets:
     The purpose of these triplets is to measure similarity between shape matches/texture
     matches and the anchor image after having been passed through a model."""
 
-    def __init__(self, shape_dir, transform=None):
+    def __init__(self, shape_dir, transform):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
 
         :param shape_dir: directory for the Geirhos dataset.
-        :param transform: a set of image transformations (optional)
+        :param transform: a set of image transformations
         """
 
         self.shape_classes = {}
         self.all_triplets = []
         self.triplets_by_image = {}
-
-        # Default image processing
-        if transform is None:
-            rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/style-transfer', 3, False)
-
-            self.transform = transforms.Compose([
-                transforms.Resize(224),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=rgb_mean, std=rgb_std)
-            ])
-        else:
-            self.transform = transform
+        self.transform = transform
 
         # Create/load dictionaries containing shape and texture classifications for each image
         try:
@@ -307,12 +284,14 @@ class FakeStimTrials(Dataset):
     a shape, color, and texture. A trial consists of an anchor image, a shape match, a
     color match, and a texture match."""
 
-    def __init__(self, fake_dir='stimuli-shape/fake', transform=None, im_shape=224):
+    def __init__(self, transform, fake_dir='stimuli-shape/fake', im_shape=224):
         """Generates/loads all possible trials. all_trials is a list of all 4-tuples.
         trials_by_image is a dictionary; the keys are the image paths, and it stores
         all shape/color/texture matches plus all possible trials for the given image
         as the anchor.
 
+        :param transform: appropriate transforms for the given model (should match training
+                      data stats)
         :param fake_dir: directory for fake images
         :param transform: transforms to be applied
         :param im_shape: dimension for resizing; resulting images are im_shapexim_shape pixels"""
@@ -320,18 +299,7 @@ class FakeStimTrials(Dataset):
         self.all_stims = {}  # Contains shape, texture, & color classifications for all images
         self.all_trials = []
         self.trials_by_image = {}
-
-        # Default image processing
-        if transform is None:
-            rgb_mean, rgb_std = calculate_dataset_stats('stimuli-shape/fake', 3, True)
-
-            self.transform = transforms.Compose([
-                transforms.Resize(im_shape),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=rgb_mean, std=rgb_std)
-            ])
-        else:
-            self.transform = transform
+        self.transform = transform
 
         # Create/load dictionaries containing shape/texture/color classifications for each image
         try:
