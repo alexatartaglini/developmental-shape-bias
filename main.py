@@ -518,8 +518,7 @@ def initialize_model(model_type):
 
     # These are the ImageNet transforms; most models will use these, but a few redefine them
     transform = transforms.Compose([
-        transforms.Scale(256),
-        transforms.CenterCrop(224),
+        transforms.Scale(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
