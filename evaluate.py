@@ -183,25 +183,25 @@ def calculate_proportions(result_dir, verbose=False):
     file.close()
 
 
-def calculate_similarity_totals(model_type, f, g, matrix=False):
+def calculate_similarity_totals(model_type, c, g, matrix=False):
     """Calculates proportion of times the shape/texture dot product/cosine similarity
     is closer for a given model. Stores proportions as a csv.
 
     :param model_type: saycam, resnet50, etc.
-    :param f: true if the artificial stimulus dataset is being used.
+    :param c: true if the artificial/cartoon stimulus dataset is being used.
     :param g: true if grayscale dataset is being used.
     :param matrix: true if you want to calculate a matrix of totals instead of
                    proportions."""
 
-    if f:
-        sim_dir = 'results/' + model_type + '/fake/'
+    if c:
+        sim_dir = 'results/' + model_type + '/cartoon/'
     elif g:
         sim_dir = 'results/' + model_type + '/grayscale/'
     else:
         sim_dir = 'results/' + model_type +'/similarity/'
 
     if not matrix:
-        if f:
+        if c:
             columns = ['Model', 'Shape Cos Closer', 'Texture Cos Closer', 'Color Cos Closer',
                        'Shape Dot Closer', 'Texture Dot Closer', 'Color Dot Closer',
                        'Shape ED Closer', 'Texture ED Closer', 'Color ED Closer']
@@ -254,7 +254,7 @@ def calculate_similarity_totals(model_type, f, g, matrix=False):
             texture_dot_closer = int(row['Texture Dot Closer'])
             texture_ed_closer = int(row['Texture ED Closer'])
 
-            if f:
+            if c:
                 color_cos_closer = int(row['Color Cos Closer'])
                 color_dot_closer = int(row['Color Dot Closer'])
                 color_ed_closer = int(row['Color ED Closer'])
@@ -266,7 +266,7 @@ def calculate_similarity_totals(model_type, f, g, matrix=False):
                 texture_cos += texture_cos_closer
                 texture_dot += texture_dot_closer
                 texture_ed += texture_ed_closer
-                if f:
+                if c:
                     color_cos += color_cos_closer
                     color_dot += color_dot_closer
                     color_ed += color_ed_closer
@@ -293,7 +293,7 @@ def calculate_similarity_totals(model_type, f, g, matrix=False):
         results.at[0, 'Texture Dot Closer'] = texture_dot / num_rows
         results.at[0, 'Texture ED Closer'] = texture_ed / num_rows
 
-        if f:
+        if c:
             results.at[0, 'Color Cos Closer'] = color_cos / num_rows
             results.at[0, 'Color Dot Closer'] = color_dot / num_rows
             results.at[0, 'Color ED Closer'] = color_ed / num_rows

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import glob
 from PIL import Image
-from data import GeirhosStyleTransferDataset, GeirhosTriplets, FakeStimTrials, calculate_dataset_stats
+from data import GeirhosStyleTransferDataset, GeirhosTriplets, CartoonStimTrials
 from plot import plot_class_values, plot_similarity_histograms, plot_norm_histogram, plot_similarity_bar
 from evaluate import csv_class_values, calculate_totals, calculate_proportions, calculate_similarity_totals
 import clip
@@ -51,7 +51,6 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
     file (model_type_embeddings.json)
 
     :param dir: path of the dataset
-    :param model: the model to extract the embeddings from with the last layer removed
     :param model_type: the type of model, eg. saycam, resnet50, etc.
     :param transform: appropriate transforms for the given model (should match training
                       data stats)
@@ -83,10 +82,10 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
         if model_type == 'clipRN50x4':
-            dataset = FakeStimTrials(transform, im_shape=288)
+            dataset = CartoonStimTrials(transform)  # im_shape=288
         else:
-            dataset = FakeStimTrials(transform)
-        embedding_dir = 'embeddings/' + model_type + '_fake.json'
+            dataset = CartoonStimTrials(transform)
+        embedding_dir = 'embeddings/' + model_type + '_cartoon.json'
 
     data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
@@ -111,7 +110,7 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
     return embedding_dict
 
 
-def generate_fake_triplets(model_type, model, shape_dir, t, g, f, n=230431):
+def generate_fake_triplets(model_type, model, shape_dir, t, g, c, n=230431):
     """Generates fake embeddings that have the same dimensionality as
      model_type for n triplets, then calculates cosine similarity & dot product
      statistics.
@@ -121,7 +120,7 @@ def generate_fake_triplets(model_type, model, shape_dir, t, g, f, n=230431):
                triplets the real models see.
      :param t: true if doing triplet simulations
      :param g: true if using grayscale Geirhos dataset
-     :param f: true if using artificial dataset
+     :param c: true if using artificial/cartoon dataset
      :param n: number of triplets to generate"""
 
     # Retrieve embedding magnitude statistics from the real model
@@ -215,7 +214,7 @@ def generate_fake_triplets(model_type, model, shape_dir, t, g, f, n=230431):
             results.at[t, 'Texture Cos Closer'] = 1
 
     results.to_csv('results/' + model_type +'/similarity/fake/fake.csv')
-    calculate_similarity_totals(model_type, f, g)
+    calculate_similarity_totals(model_type, c, g)
 
 
 def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
@@ -371,7 +370,7 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
             df.to_csv('results/' + model_type + '/similarity/' + anchor[:-4] + '.csv', index=False)
 
 
-def fake_stimuli(model_type, transform, embeddings, verbose):
+def cartoon_stimuli(model_type, transform, embeddings, verbose):
     """
     Runs simulations with cartoon dataset quadruplets. The quadruplets consist of an
     anchor image, a shape match, a color match, and a texture match. Similarity is
@@ -388,11 +387,11 @@ def fake_stimuli(model_type, transform, embeddings, verbose):
     """
 
     try:
-        os.mkdir('results/' + model_type + '/fake')
+        os.mkdir('results/' + model_type + '/cartoon')
     except FileExistsError:
         pass
 
-    trials = FakeStimTrials(transform)
+    trials = CartoonStimTrials(transform)
     stimuli = trials.all_stims.keys()
     all_trials = trials.trials_by_image
 
@@ -509,7 +508,7 @@ def fake_stimuli(model_type, transform, embeddings, verbose):
                 df.at[i, 'Texture ED Closer'] = 0
                 df.at[i, 'Color ED Closer'] = 1
 
-        df.to_csv('results/' + model_type + '/fake/' + anchor[:-4] + '.csv', index=False)
+        df.to_csv('results/' + model_type + '/cartoon/' + anchor[:-4] + '.csv', index=False)
 
 
 def initialize_model(model_type):
@@ -525,8 +524,8 @@ def initialize_model(model_type):
 
     # These are the ImageNet transforms; most models will use these, but a few redefine them
     transform = transforms.Compose([
-        transforms.RandomSizedCrop(224),
-        transforms.RandomHorizontalFlip(),
+        transforms.Scale(256),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
@@ -617,8 +616,8 @@ def run_simulations(args, model_type):
 
     If t flag: runs triplet simulations using the Geirhos dataset
                (see documentation for the triplets function).
-    If f flag: runs quadruplet simulations using Brenden Lake's artificial stimulus dataset
-               (see documentation for the fake_stimuli function).
+    If c flag: runs quadruplet simulations using Brenden Lake's artificial stimulus dataset
+               (see documentation for the cartoon_stimuli function).
     If g flag: runs simulations using a grayscale version of the Geirhos dataset.
 
     By default, the model is the SAYCAM-trained resnext model. This can be changed when running
@@ -634,7 +633,7 @@ def run_simulations(args, model_type):
     plot = args.plot
     verbose = args.verbose
     t = args.triplets
-    f = args.fake
+    c = args.cartoon
     g = args.grayscale
 
     if g:
@@ -681,30 +680,30 @@ def run_simulations(args, model_type):
                 embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
 
         triplets(model_type, embeddings, verbose, g, shape_dir)
-        calculate_similarity_totals(model_type, f, g)
+        calculate_similarity_totals(model_type, c, g)
 
         if plot:
             plot_similarity_histograms(model_type, g)
-            plot_norm_histogram(model_type, f, g)
+            plot_norm_histogram(model_type, c, g)
 
-    elif f:
+    elif c:
         try:
-            os.mkdir('results/' + model_type + '/fake')
+            os.mkdir('results/' + model_type + '/cartoon')
         except FileExistsError:
             pass
 
         try:
-            os.mkdir('figures/' + model_type + '/fake')
+            os.mkdir('figures/' + model_type + '/cartoon')
         except FileExistsError:
             pass
 
         try:
-            embeddings = json.load(open('embeddings/' + model_type + '_fake.json'))
+            embeddings = json.load(open('embeddings/' + model_type + '_cartoon.json'))
         except FileNotFoundError:
             embeddings = get_embeddings('', model, model_type, t, g)
 
-        fake_stimuli(model_type, transform, embeddings, verbose)
-        calculate_similarity_totals(model_type, f, g)
+        cartoon_stimuli(model_type, transform, embeddings, verbose)
+        calculate_similarity_totals(model_type, c, g)
 
     else:
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
@@ -779,7 +778,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--plot', help='Plots results.', required=False, action='store_true')
     parser.add_argument('-t', '--triplets', help='Obtains similarities for triplets of images.',
                         required=False, action='store_true')
-    parser.add_argument('-f', '--fake', help='Obtains similarities for artificial, novel stimuli.',
+    parser.add_argument('-c', '--cartoon', help='Obtains similarities for cartoon, novel stimuli.',
                         required=False, action='store_true')
     parser.add_argument('-g', '--grayscale', help='Runs simulations with a grayscale version of the Geirhos dataset.',
                         required=False, action='store_true')
@@ -799,11 +798,11 @@ if __name__ == '__main__':
                 run_simulations(args, model_type)
         else:
             g = args.grayscale
-            f = args.fake
-            plot_similarity_bar(g, f)
+            c = args.cartoon
+            plot_similarity_bar(g, c)
 
             for model_type in model_list:
                 print("Plotting norm histograms for {0}".format(model_type))
-                plot_norm_histogram(model_type, f, g)
+                plot_norm_histogram(model_type, c, g)
     else:
         run_simulations(args, args.model)

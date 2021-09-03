@@ -177,11 +177,11 @@ def plot_similarity_histograms(model_type, g):
     plt.savefig(plot_dir + 'difference.png')
 
 
-def plot_norm_histogram(model_type, f, g):
+def plot_norm_histogram(model_type, c, g):
     """Plots a histogram of embedding norms for a given model.
 
     :param model_type: resnet40, saycam, etc.
-    :param f: True if using the artificial stimuli dataset.
+    :param c: True if using the artificial/cartoon stimuli dataset.
     :param g: True if using the grayscale Geirhos dataset."""
 
     # Create directory
@@ -203,9 +203,9 @@ def plot_norm_histogram(model_type, f, g):
     b = 30  # Number of bins
 
     # Load embeddings
-    if f:
-        embedding_dir = 'embeddings/' + model_type + '_fake.json'
-        fig_dir = plot_dir + model_type + '_fake.png'
+    if c:
+        embedding_dir = 'embeddings/' + model_type + '_cartoon.json'
+        fig_dir = plot_dir + model_type + '_cartoon.png'
         b = 30
     elif g:
         embedding_dir = 'embeddings/' + model_type + '_gray.json'
@@ -235,12 +235,12 @@ def plot_norm_histogram(model_type, f, g):
     plt.savefig(fig_dir)
 
 
-def plot_similarity_bar(g, f):
+def plot_similarity_bar(g, c):
     """Plots a stacked bar plot of proportion shape/texture/(color) match according to
     similarity across models.
 
     :param g: True if using the grayscale Geirhos dataset.
-    :param f: True if using the artificial stimuli dataset."""
+    :param c: True if using the artificial/cartoon stimuli dataset."""
 
     model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50', 'clipRN50x4',
                     'clipViTB32', 'saycam', 'saycamA', 'saycamS', 'saycamY']
@@ -248,8 +248,8 @@ def plot_similarity_bar(g, f):
                     'VGG-16', 'CLIP-ResNet50', 'CLIP-ResNet50x4', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A',
                     'SAYCAM-S', 'SAYCAM-Y']
 
-    if f:
-        sub = 'fake'
+    if c:
+        sub = 'cartoon'
         d = 3
     elif g:
         sub = 'grayscale'
@@ -267,7 +267,7 @@ def plot_similarity_bar(g, f):
         sim_dot = [float(df['Shape Dot Closer']), float(df['Texture Dot Closer'])]
         sim_ed = [float(df['Shape ED Closer']), float(df['Texture ED Closer'])]
 
-        if f:
+        if c:
             sim_cos.append(float(df['Color Cos Closer']))
             sim_dot.append(float(df['Color Dot Closer']))
             sim_ed.append(float(df['Color ED Closer']))
@@ -276,7 +276,7 @@ def plot_similarity_bar(g, f):
         proportions[model][1, :] = sim_dot
         proportions[model][2, :] = sim_ed
 
-    if f:
+    if c:
         measures = [['shape cos', 'texture cos', 'color cos'],
                     ['shape dot', 'texture dot', 'color dot'],
                     ['shape ed', 'texture ed', 'color ed']]
@@ -307,7 +307,7 @@ def plot_similarity_bar(g, f):
 
     colors = [['#345eeb', '#1b6600', '#8f178d'], ['#4aace8', '#4cb825', '#cc43de'], ['#81d0f0', '#a3eb5b', '#eca1ed']]
 
-    if f:
+    if c:
         pdf[['shape cos', 'texture cos', 'color cos']].plot.bar(stacked=True, width=0.1, position=1.5, color=colors[0],
                                                                 ax=ax)
         pdf[['shape ed', 'texture ed', 'color ed']].plot.bar(stacked=True, width=0.1, position=0.5, color=colors[1],

@@ -10,18 +10,18 @@ import cv2
 warnings.filterwarnings("ignore")
 
 
-def calculate_dataset_stats(path, num_channels, f):
+def calculate_dataset_stats(path, num_channels, c):
     """This function calculates and returns the mean and std of an image dataset.
     Should be used to determine values for normalization for transforms.
 
     :param path: the path to the dataset.
     :param num_channels: the number of channels (ie. 1, 3).
-    :param f: True if using artificial dataset
+    :param c: True if using artificial/cartoon dataset
 
     :return: two num_channels length lists, one containing the mean and one
              containing the std."""
 
-    if f:
+    if c:
         classes = ['']
     else:
         classes = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
@@ -278,13 +278,13 @@ class GeirhosTriplets:
         return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
 
 
-class FakeStimTrials(Dataset):
+class CartoonStimTrials(Dataset):
     """This class provides a way to generate and access all possible trials of novel,
-    artificial stimuli from the stimuli-shape/fake directory. Each stimulus consists of
+    artificial stimuli from the stimuli-shape/cartoon directory. Each stimulus consists of
     a shape, color, and texture. A trial consists of an anchor image, a shape match, a
     color match, and a texture match."""
 
-    def __init__(self, transform, fake_dir='stimuli-shape/fake', im_shape=224):
+    def __init__(self, transform, cartoon_dir='stimuli-shape/cartoon'):
         """Generates/loads all possible trials. all_trials is a list of all 4-tuples.
         trials_by_image is a dictionary; the keys are the image paths, and it stores
         all shape/color/texture matches plus all possible trials for the given image
@@ -292,9 +292,8 @@ class FakeStimTrials(Dataset):
 
         :param transform: appropriate transforms for the given model (should match training
                       data stats)
-        :param fake_dir: directory for fake images
-        :param transform: transforms to be applied
-        :param im_shape: dimension for resizing; resulting images are im_shapexim_shape pixels"""
+        :param cartoon_dir: directory for artificial/cartoon images
+        :param transform: transforms to be applied"""
 
         self.all_stims = {}  # Contains shape, texture, & color classifications for all images
         self.all_trials = []
@@ -304,12 +303,12 @@ class FakeStimTrials(Dataset):
         # Create/load dictionaries containing shape/texture/color classifications for each image
         try:
             # Load dictionaries
-            self.all_stims = json.load(open('fake_stimulus_classes.json'))  # Dictionary of dictionaries
+            self.all_stims = json.load(open('cartoon_stimulus_classes.json'))  # Dictionary of dictionaries
 
         except FileNotFoundError:
 
             # Create dictionaries
-            for image_dir in glob.glob(fake_dir + '/*.png'):
+            for image_dir in glob.glob(cartoon_dir + '/*.png'):
                 image = image_dir.split('/')[2]  # file name
                 specs = image.replace('.png', '').split('_')  # [shape, texture, color]
 
@@ -324,13 +323,13 @@ class FakeStimTrials(Dataset):
                     self.all_stims[image]['dir'] = image_dir
 
             # Save dictionary as a JSON file
-            with open('fake_stimulus_classes.json', 'w') as file:
+            with open('cartoon_stimulus_classes.json', 'w') as file:
                 json.dump(self.all_stims, file)
 
         # Generate/load trials
         try:
             # Load trials
-            self.trials_by_image = json.load(open('fake_trials.json'))
+            self.trials_by_image = json.load(open('cartoon_trials.json'))
             self.all_trials = self.trials_by_image['all']
             self.trials_by_image.pop('all')
 
@@ -392,14 +391,14 @@ class FakeStimTrials(Dataset):
             self.trials_by_image['all'] = self.all_trials
 
             # Save dictionary as a JSON file
-            with open('fake_trials.json', 'w') as file:
+            with open('cartoon_trials.json', 'w') as file:
                 json.dump(self.trials_by_image, file)
 
     def make_square(self, im, min_size=224, fill_color=(255, 255, 255)):
         """This function pads rectangular images with white space.
 
         :param im: input image
-        :param min_size: the minimum size that an image should be
+        :param min_size: the minimum size that an image should be (224x224 by default)
         :param fill_color: by default, white"""
 
         """        x, y = im.size
