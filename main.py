@@ -72,19 +72,13 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
 
     # Initialize dataset
     if t:
-        if model_type == 'clipRN50x4':
-            dataset = GeirhosStyleTransferDataset(dir, '', transform, im_size=288)
-        else:
-            dataset = GeirhosStyleTransferDataset(dir, '', transform)
+        dataset = GeirhosStyleTransferDataset(dir, '', transform)
         if g:
             embedding_dir = 'embeddings/' + model_type + '_gray.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
-        if model_type == 'clipRN50x4':
-            dataset = CartoonStimTrials(transform)  # im_shape=288
-        else:
-            dataset = CartoonStimTrials(transform)
+        dataset = CartoonStimTrials(transform)
         embedding_dir = 'embeddings/' + model_type + '_cartoon.json'
 
     data_loader = DataLoader(dataset, batch_size=1, shuffle=False)

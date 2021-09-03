@@ -52,12 +52,11 @@ def calculate_dataset_stats(path, num_channels, c):
 class GeirhosStyleTransferDataset(Dataset):
     """A custom Dataset class for the Geirhos Style Transfer dataset."""
 
-    def __init__(self, shape_dir, texture_dir, transform, im_size=224):
+    def __init__(self, shape_dir, texture_dir, transform):
         """
         :param shape_dir: a directory for the style transfer dataset organized by shape
         :param texture_dir: a directory for the style transfer dataset organized by texture
         :param transform: a set of image transformations
-        :param im_size: size (pixels) for image resizing (im_size x im_size); 224 by default.
         """
 
         self.shape_dir = shape_dir
