@@ -303,24 +303,22 @@ def plot_similarity_bar(g, c):
 
     plt.style.use('ggplot')
 
-    fig, ax = plt.subplots()
+    #fig, ax = plt.subplots()
 
     colors = [['#345eeb', '#1b6600', '#8f178d'], ['#4aace8', '#4cb825', '#cc43de'], ['#81d0f0', '#a3eb5b', '#eca1ed']]
+    distance_metrics = [['Cosine Similarity', 'cos'], ['Euclidean Distance', 'ed'], ['Dot Product', 'dot']]
 
-    if c:
-        pdf[['shape cos', 'texture cos', 'color cos']].plot.bar(stacked=True, width=0.1, position=1.5, color=colors[0],
-                                                                ax=ax)
-        pdf[['shape ed', 'texture ed', 'color ed']].plot.bar(stacked=True, width=0.1, position=0.5, color=colors[1],
-                                                             ax=ax)
-        pdf[['shape dot', 'texture dot', 'color dot']].plot.bar(stacked=True, width=0.1, position=-0.5,
-                                                                color=colors[2], ax=ax)
-    else:
-        pdf[['shape cos', 'texture cos']].plot.bar(stacked=True, width=0.1, position=1.5, color=colors[0], ax=ax)
-        pdf[['shape ed', 'texture ed']].plot.bar(stacked=True, width=0.1, position=0.5, color=colors[1], ax=ax)
-        pdf[['shape dot', 'texture dot']].plot.bar(stacked=True, width=0.1, position=-0.5,
-                                                   color=colors[2], ax=ax)
-    plt.legend(loc="upper left", bbox_to_anchor=(1.1, 1.05))
-    plt.xticks(rotation=315, ha='left')
-    plt.title('Proportions of Similarity Matches by Model')
-    plt.tight_layout()
-    plt.savefig('figures/proportions_' + sub + '.png')
+    for i in range(3):
+        fig, ax = plt.subplots()
+        fig.set_size_inches(12, 9)
+        ax.figure.set_size_inches(9.7, 5.3)
+
+        pdf[measures[i]].plot.barh(stacked=True, color=colors[i], width=0.8, ax=ax)
+        plt.legend(loc="center right", bbox_to_anchor=(1.25, 0.5))  # bbox_to_anchor=(1.1, 1.05)
+        plt.title('Proportions of Similarity Matches by Model: ' + distance_metrics[i][0])
+        plt.tight_layout()
+        plt.xlim([0, 1])
+        plt.xticks([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1])
+        plt.xlabel('Proportion', size=13, color='black')
+        plt.ylabel('Model', size=13, color='black')
+        plt.savefig('figures/proportions_' + sub + '_' + distance_metrics[i][1] + '.png', bbox_inches = "tight")

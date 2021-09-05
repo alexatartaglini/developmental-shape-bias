@@ -621,13 +621,13 @@ def run_simulations(args, model_type):
     :param model_type: the type of model, saycam by default. Try -m 'resnet50' to change,
         for example."""
 
-    batch_size = 1
     shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
     plot = args.plot
     verbose = args.verbose
     t = args.triplets
     c = args.cartoon
     g = args.grayscale
+    metrics = ['cos', 'ed', 'dot']  # The three distance metrics; simulations for each run separately
 
     if g:
         shape_dir = 'stimuli-shape/style-transfer-gray'
@@ -794,8 +794,10 @@ if __name__ == '__main__':
             c = args.cartoon
             plot_similarity_bar(g, c)
 
+            '''
             for model_type in model_list:
                 print("Plotting norm histograms for {0}".format(model_type))
                 plot_norm_histogram(model_type, c, g)
+            '''
     else:
         run_simulations(args, args.model)
