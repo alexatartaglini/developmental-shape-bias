@@ -184,8 +184,8 @@ def calculate_proportions(result_dir, verbose=False):
 
 
 def calculate_similarity_totals(model_type, c, g, matrix=False):
-    """Calculates proportion of times the shape/texture dot product/cosine similarity
-    is closer for a given model. Stores proportions as a csv.
+    """Calculates proportion of times the shape/texture dot product/cosine similarity/
+    Euclidean distance is closer for a given model. Stores proportions as a csv.
 
     :param model_type: saycam, resnet50, etc.
     :param c: true if the artificial/cartoon stimulus dataset is being used.

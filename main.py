@@ -90,7 +90,8 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
             name = batch[1][0]
 
             # Pass image into model
-            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4':
+            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4'\
+                    or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
                 embedding = penult_model.encode_image(im)
                 embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
             else:
@@ -104,7 +105,7 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
     return embedding_dict
 
 
-def generate_fake_triplets(model_type, model, shape_dir, t, g, c, n=230431):
+def generate_fake_triplets(model_type, model, shape_dir, transform, t, g, c, n=230431):
     """Generates fake embeddings that have the same dimensionality as
      model_type for n triplets, then calculates cosine similarity & dot product
      statistics.
@@ -121,7 +122,7 @@ def generate_fake_triplets(model_type, model, shape_dir, t, g, c, n=230431):
     try:
         embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
     except FileNotFoundError:
-        embeddings = get_embeddings(shape_dir, model, model_type, t, g)
+        embeddings = get_embeddings(shape_dir, model, model_type, transform, t, g)
 
     avg = 0
     num_embeddings = 0
@@ -215,7 +216,7 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
-    Finally, computes and stores cosine similarity, dot products, Euclidean distances:
+    Finally, computes either cosine similarity, dot products, or Euclidean distances:
     anchor x shape match, anchor x texture match. This determines whether the model
     thinks the shape or texture match for an anchor image is closer to the anchor and
     essentially provides a secondary measure of shape/texture bias.
@@ -226,7 +227,8 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
     :param embeddings: a dictionary of embeddings for each image for the given model
     :param verbose: true if results should be printed to the terminal.
     :param g: true if a grayscale version of the Geirhos dataset should be used.
-    :param shape_dir: directory for the Geirhos dataset."""
+    :param shape_dir: directory for the Geirhos dataset.
+    """
 
     if g:
         if not os.path.isdir('stimuli-shape/style-transfer-gray'):  # Create grayscale images
@@ -273,16 +275,12 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
             df.at[i, 'Shape Match'] = shape_match[:-4]
             df.at[i, 'Texture Match'] = texture_match[:-4]
 
-            # Retrieve images corresponding to names
-            # anchor_im, shape_im, texture_im = t.getitem(triplet)
-
             # Get image embeddings
             anchor_output = torch.FloatTensor(embeddings[anchor])
             shape_output = torch.FloatTensor(embeddings[shape_match])
             texture_output = torch.FloatTensor(embeddings[texture_match])
 
-            if anchor_output.shape == (1,1024) or anchor_output.shape == (1,512) \
-                    or anchor_output.shape == (1, 640):
+            if anchor_output.shape[0] == 1:
                 anchor_output = torch.squeeze(anchor_output, 0)
                 shape_output = torch.squeeze(shape_output, 0)
                 texture_output = torch.squeeze(texture_output, 0)
@@ -371,7 +369,7 @@ def cartoon_stimuli(model_type, transform, embeddings, verbose):
     computed between the anchor image and all three matches, and the match with the
     highest similarity is considered as a model "choice." Matches are exclusive; eg.
     the color match does not match the anchor in shape or texture. This function
-    stores the similarities and choices in a CSV.
+    stores the similarities and choices in a CSV for a given quadruplet.
 
     :param model_type: resnet50, saycam, etc.
     :param transform: appropriate transforms for the given model (should match training
@@ -430,7 +428,8 @@ def cartoon_stimuli(model_type, transform, embeddings, verbose):
             texture_output = torch.FloatTensor(embeddings[texture_match])
             color_output = torch.FloatTensor(embeddings[color_match])
 
-            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4':
+            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4'\
+                    or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
                 anchor_output = torch.squeeze(anchor_output, 0)
                 shape_output = torch.squeeze(shape_output, 0)
                 texture_output = torch.squeeze(texture_output, 0)
@@ -566,8 +565,12 @@ def initialize_model(model_type):
         model, transform = clip.load('RN50', device='cpu')
     elif model_type == 'clipRN50x4':
         model, transform = clip.load('RN50x4', device='cpu')
+    elif model_type == 'clipRN50x16':
+        model, transform = clip.load('RN50x16', device='cpu')
     elif model_type == 'clipViTB32':
         model, transform = clip.load('ViT-B/32', device='cpu')
+    elif model_type == 'clipViTB16':
+        model, transform = clip.load('ViT-B/16', device='cpu')
     elif model_type == 'dino_resnet50':
         model = torch.hub.load('facebookresearch/dino:main', 'dino_resnet50')
     elif model_type == 'alexnet':
@@ -592,7 +595,7 @@ def initialize_model(model_type):
         modules = list(model.children())[:-1]
         penult_model = nn.Sequential(*modules)
     elif model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'dino_resnet50'\
-            or model_type == 'clipRN50x4':
+            or model_type == 'clipRN50x4' or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
         penult_model = model
     elif model_type == 'alexnet' or model_type == 'vgg16':
         new_classifier = nn.Sequential(*list(model.classifier.children())[:-1])
@@ -627,7 +630,6 @@ def run_simulations(args, model_type):
     t = args.triplets
     c = args.cartoon
     g = args.grayscale
-    metrics = ['cos', 'ed', 'dot']  # The three distance metrics; simulations for each run separately
 
     if g:
         shape_dir = 'stimuli-shape/style-transfer-gray'
@@ -672,7 +674,7 @@ def run_simulations(args, model_type):
             except FileNotFoundError:
                 embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
 
-        triplets(model_type, embeddings, verbose, g, shape_dir)
+        triplets(model_type, transform, embeddings, verbose, g, shape_dir)
         calculate_similarity_totals(model_type, c, g)
 
         if plot:
@@ -693,12 +695,12 @@ def run_simulations(args, model_type):
         try:
             embeddings = json.load(open('embeddings/' + model_type + '_cartoon.json'))
         except FileNotFoundError:
-            embeddings = get_embeddings('', model, model_type, t, g)
+            embeddings = get_embeddings('', model, model_type, transform, t, g)
 
         cartoon_stimuli(model_type, transform, embeddings, verbose)
         calculate_similarity_totals(model_type, c, g)
 
-    else:
+    else:  # The code below considers model decisions and not similarities; it isn't used
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
         shape_categories0 = [shape + '0' for shape in shape_categories]
         shape_dict0 = dict.fromkeys(shape_categories0)
@@ -782,7 +784,8 @@ if __name__ == '__main__':
     plot = args.plot
 
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
-                  'clipViTB32', 'dino_resnet50', 'alexnet', 'vgg16', 'swav', 'mocov2']
+                  'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
+                  'swav', 'mocov2']
 
     if a:
         if not plot:

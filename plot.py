@@ -242,11 +242,12 @@ def plot_similarity_bar(g, c):
     :param g: True if using the grayscale Geirhos dataset.
     :param c: True if using the artificial/cartoon stimuli dataset."""
 
-    model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50', 'clipRN50x4',
-                    'clipViTB32', 'saycam', 'saycamA', 'saycamS', 'saycamY']
+    model_types = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
+                  'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
+                  'swav', 'mocov2']
     model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet',
-                    'VGG-16', 'CLIP-ResNet50', 'CLIP-ResNet50x4', 'CLIP-ViTB/32', 'ImageNet SAYCAM', 'SAYCAM-A',
-                    'SAYCAM-S', 'SAYCAM-Y']
+                    'VGG-16', 'CLIP-ResNet50', 'CLIP-ResNet50x4', 'CLIP-ResNet50x16', 'CLIP-ViTB/32',
+                    'CLIP-ViTB/16', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
 
     if c:
         sub = 'cartoon'
