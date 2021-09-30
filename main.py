@@ -219,7 +219,10 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
     Finally, computes either cosine similarity, dot products, or Euclidean distances:
     anchor x shape match, anchor x texture match. This determines whether the model
     thinks the shape or texture match for an anchor image is closer to the anchor and
-    essentially provides a secondary measure of shape/texture bias.
+    essentially provides a secondary measure of shape/texture bias. This function
+    returns a dictionary where values are a list: position 0 contains a dataframe
+    of results for a given anchor, and position 1 contains an appropriate path for
+    a corresponding CSV file. The keys are the names of the anchor stimuli.
 
     :param model_type: resnet50, saycam, etc.
     :param transform: appropriate transforms for the given model (should match training
@@ -228,6 +231,9 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
     :param verbose: true if results should be printed to the terminal.
     :param g: true if a grayscale version of the Geirhos dataset should be used.
     :param shape_dir: directory for the Geirhos dataset.
+
+    :return: a dictionary containing a dataframe of results and a path for a CSV file for
+             each anchor stimulus.
     """
 
     if g:
@@ -242,18 +248,18 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
                     im_name = im_path.split('/')[3]
                     img.save('stimuli-shape/style-transfer-gray/' + category + '/' + im_name)
 
-    t = GeirhosTriplets(shape_dir, transform)  # Default transforms
+    same_instance = True  # Set false if you want matches to exclude same instances
+    t = GeirhosTriplets(shape_dir, transform, same_instance)  # Default transforms
 
     images = t.shape_classes.keys()
     all_triplets = t.triplets_by_image
+    results = {key: None for key in images}  # a dictionary of anchor name to dataframe mappings
 
-    sim_dict = {}
+    metrics = ['dot', 'cos', 'ed']
 
-    columns = ['Model', 'Anchor', 'Anchor Shape', 'Anchor Texture', 'Shape Match',
-               'Texture Match', 'Shape Dot', 'Shape Cos', 'Shape ED',
-               'Texture Dot', 'Texture Cos', 'Texture ED', 'Shape Dot Closer',
-               'Shape Cos Closer', 'Shape ED Closer',
-               'Texture Dot Closer', 'Texture Cos Closer', 'Texture ED Closer']
+    columns = ['Model', 'Anchor', 'Anchor Shape', 'Anchor Texture', 'Shape Match', 'Texture Match',
+               'Metric', 'Shape Distance', 'Texture Distance', 'Shape Match Closer',
+               'Texture Match Closer']
 
     cosx = torch.nn.CosineSimilarity(dim=0, eps=1e-08)
 
@@ -261,105 +267,77 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
         anchor_triplets = all_triplets[anchor]['triplets']
         num_triplets = len(anchor_triplets)
 
-        df = pd.DataFrame(index=range(num_triplets), columns=columns)
+        df = pd.DataFrame(index=range(num_triplets * len(metrics)), columns=columns)
         df['Anchor'] = anchor[:-4]
         df['Model'] = model_type
         df['Anchor Shape'] = t.shape_classes[anchor]['shape_spec']
         df['Anchor Texture'] = t.shape_classes[anchor]['texture_spec']
 
-        for i in range(num_triplets):  # Iterate over possible triplets
-            triplet = anchor_triplets[i]
-            shape_match = triplet[1]
-            texture_match = triplet[2]
+        metric_mult = 0  # Ensures correct placement of results
 
-            df.at[i, 'Shape Match'] = shape_match[:-4]
-            df.at[i, 'Texture Match'] = texture_match[:-4]
+        for metric in metrics:  # Iterate over distance metrics
+            step = metric_mult * num_triplets
 
-            # Get image embeddings
-            anchor_output = torch.FloatTensor(embeddings[anchor])
-            shape_output = torch.FloatTensor(embeddings[shape_match])
-            texture_output = torch.FloatTensor(embeddings[texture_match])
+            for i in range(num_triplets):  # Iterate over possible triplets
+                df.at[i + step, 'Metric'] = metric
 
-            if anchor_output.shape[0] == 1:
-                anchor_output = torch.squeeze(anchor_output, 0)
-                shape_output = torch.squeeze(shape_output, 0)
-                texture_output = torch.squeeze(texture_output, 0)
+                triplet = anchor_triplets[i]
+                shape_match = triplet[1]
+                texture_match = triplet[2]
 
-            # Retrieve similarities if they've already been calculated
-            if (anchor, shape_match) in sim_dict.keys() or (shape_match, anchor) in sim_dict.keys():
-                try:
-                    shape_dot = sim_dict[(anchor, shape_match)][0]
-                    shape_cos = sim_dict[(anchor, shape_match)][1]
-                    shape_ed = sim_dict[(anchor, shape_match)][2]
-                except KeyError:
-                    shape_dot = sim_dict[(shape_match, anchor)][0]
-                    shape_cos = sim_dict[(shape_match, anchor)][1]
-                    shape_ed = sim_dict[(shape_match, anchor)][2]
-            else:
-                shape_dot = np.dot(anchor_output, shape_output)
-                shape_cos = cosx(anchor_output, shape_output)
-                shape_ed = torch.cdist(torch.unsqueeze(shape_output, 0), torch.unsqueeze(anchor_output, 0))
-                sim_dict[(anchor, shape_match)] = [shape_dot, shape_cos, shape_ed]
+                df.at[i + step, 'Shape Match'] = shape_match[:-4]
+                df.at[i + step, 'Texture Match'] = texture_match[:-4]
 
-            if (anchor, texture_match) in sim_dict.keys() or (texture_match, anchor) in sim_dict.keys():
-                try:
-                    texture_dot = sim_dict[(anchor, texture_match)][0]
-                    texture_cos = sim_dict[(anchor, texture_match)][1]
-                    texture_ed = sim_dict[(anchor, texture_match)][2]
-                except KeyError:
-                    texture_dot = sim_dict[(texture_match, anchor)][0]
-                    texture_cos = sim_dict[(texture_match, anchor)][1]
-                    texture_ed = sim_dict[(texture_match, anchor)][2]
-            else:
-                texture_dot = np.dot(anchor_output, texture_output)
-                texture_cos = cosx(anchor_output, texture_output)
-                texture_ed = torch.cdist(torch.unsqueeze(texture_output, 0), torch.unsqueeze(anchor_output, 0))
-                sim_dict[(anchor, texture_match)] = [texture_dot, texture_cos, texture_ed]
+                # Get image embeddings
+                anchor_output = torch.FloatTensor(embeddings[anchor])
+                shape_output = torch.FloatTensor(embeddings[shape_match])
+                texture_output = torch.FloatTensor(embeddings[texture_match])
 
-            if verbose:
-                print("For " + anchor + " paired with " + shape_match + ", " + texture_match + ":")
-                print("\tShape match dot product: " + str(shape_dot))
-                print("\tShape match cos similarity: " + str(shape_cos.item()))
-                print("\tShape match Euclidean distance: " + str(shape_ed.item()))
-                print("\t-------------")
-                print("\tTexture match dot: " + str(texture_dot))
-                print("\tTexture match cos similarity: " + str(texture_cos.item()))
-                print("\tTexture match Euclidean distance: " + str(texture_ed.item()))
-                print()
+                if anchor_output.shape[0] == 1:
+                    anchor_output = torch.squeeze(anchor_output, 0)
+                    shape_output = torch.squeeze(shape_output, 0)
+                    texture_output = torch.squeeze(texture_output, 0)
 
-            df.at[i, 'Shape Dot'] = shape_dot
-            df.at[i, 'Shape Cos'] = shape_cos.item()
-            df.at[i, 'Shape ED'] = shape_ed.item()
-            df.at[i, 'Texture Dot'] = texture_dot
-            df.at[i, 'Texture Cos'] = texture_cos.item()
-            df.at[i, 'Texture ED'] = texture_ed.item()
+                if metric == 'cos':  # Cosine similarity
+                    shape_dist = cosx(anchor_output, shape_output).item()
+                    texture_dist = cosx(anchor_output, texture_output).item()
+                elif metric == 'dot':  # Dot product
+                    shape_dist = np.dot(anchor_output, shape_output).item()
+                    texture_dist = np.dot(anchor_output, texture_output).item()
+                else:  # Euclidean distance
+                    shape_dist = torch.cdist(torch.unsqueeze(shape_output, 0), torch.unsqueeze(anchor_output, 0)).item()
+                    texture_dist = torch.cdist(torch.unsqueeze(texture_output, 0),
+                                               torch.unsqueeze(anchor_output, 0)).item()
 
-            # Compare shape/texture results
-            if shape_dot > texture_dot:
-                df.at[i, 'Shape Dot Closer'] = 1
-                df.at[i, 'Texture Dot Closer'] = 0
-            else:
-                df.at[i, 'Shape Dot Closer'] = 0
-                df.at[i, 'Texture Dot Closer'] = 1
+                df.at[i + step, 'Shape Distance'] = shape_dist
+                df.at[i + step, 'Texture Distance'] = texture_dist
 
-            if shape_cos > texture_cos:
-                df.at[i, 'Shape Cos Closer'] = 1
-                df.at[i, 'Texture Cos Closer'] = 0
-            else:
-                df.at[i, 'Shape Cos Closer'] = 0
-                df.at[i, 'Texture Cos Closer'] = 1
+                if metric == 'ed':
+                    shape_dist = -shape_dist
+                    texture_dist = -texture_dist
 
-            if shape_ed < texture_ed:
-                df.at[i, 'Shape ED Closer'] = 1
-                df.at[i, 'Texture ED Closer'] = 0
-            else:
-                df.at[i, 'Shape ED Closer'] = 0
-                df.at[i, 'Texture ED Closer'] = 1
+                # Compare shape/texture results
+                if shape_dist > texture_dist:
+                    df.at[i + step, 'Shape Match Closer'] = 1
+                    df.at[i + step, 'Texture Match Closer'] = 0
+                else:
+                    df.at[i + step, 'Shape Match Closer'] = 0
+                    df.at[i + step, 'Texture Match Closer'] = 1
+
+            metric_mult += 1
 
         if g:
-            df.to_csv('results/' + model_type + '/grayscale/' + anchor[:-4] + '.csv', index=False)
+            results[anchor] = [df, 'results/' + model_type + '/grayscale/' + anchor[:-4] + '.csv']
+        elif not same_instance:
+            try:
+                os.mkdir('results/' + model_type + '/diff_instance')
+            except FileExistsError:
+                pass
+            results[anchor] = [df, 'results/' + model_type + '/diff_instance/' + anchor[:-4] + '.csv']
         else:
-            df.to_csv('results/' + model_type + '/similarity/' + anchor[:-4] + '.csv', index=False)
+            results[anchor] = [df, 'results/' + model_type + '/similarity/' + anchor[:-4] + '.csv']
+
+    return results
 
 
 def cartoon_stimuli(model_type, transform, embeddings, verbose):
@@ -369,32 +347,31 @@ def cartoon_stimuli(model_type, transform, embeddings, verbose):
     computed between the anchor image and all three matches, and the match with the
     highest similarity is considered as a model "choice." Matches are exclusive; eg.
     the color match does not match the anchor in shape or texture. This function
-    stores the similarities and choices in a CSV for a given quadruplet.
+    returns a dictionary where values are a list: position 0 contains a dataframe
+    of results for a given anchor, and position 1 contains an appropriate path for
+    a corresponding CSV file. The keys are the names of the anchor stimuli.
 
     :param model_type: resnet50, saycam, etc.
     :param transform: appropriate transforms for the given model (should match training
                       data stats)
     :param embeddings: a dictionary of embeddings for each image for the given model
     :param verbose: true if results should be printed to the terminal.
-    """
 
-    try:
-        os.mkdir('results/' + model_type + '/cartoon')
-    except FileExistsError:
-        pass
+    :return: a dictionary containing a dataframe of results and a path for a CSV file for
+             each anchor stimulus.
+    """
 
     trials = CartoonStimTrials(transform)
     stimuli = trials.all_stims.keys()
     all_trials = trials.trials_by_image
+    results = {key: None for key in stimuli}  # a dictionary of anchor name to dataframe mappings
+
+    metrics = ['dot', 'cos', 'ed']
 
     columns = ['Model', 'Anchor', 'Anchor Shape', 'Anchor Texture', 'Anchor Color',
-               'Shape Match', 'Texture Match', 'Color Match',
-               'Shape Cos', 'Texture Cos', 'Color Cos',
-               'Shape Dot', 'Texture Dot', 'Color Dot',
-               'Shape ED', 'Texture ED', 'Color ED',
-               'Shape Cos Closer', 'Texture Cos Closer', 'Color Cos Closer',
-               'Shape Dot Closer', 'Texture Dot Closer', 'Color Dot Closer',
-               'Shape ED Closer', 'Texture ED Closer', 'Color ED Closer',]
+               'Shape Match', 'Texture Match', 'Color Match', 'Metric',
+               'Shape Distance', 'Texture Distance', 'Color Distance',
+               'Shape Match Closer', 'Texture Match Closer', 'Color Match Closer']
 
     cosx = torch.nn.CosineSimilarity(dim=0, eps=1e-08)
 
@@ -405,103 +382,83 @@ def cartoon_stimuli(model_type, transform, embeddings, verbose):
         if num_trials == 0:
             continue
 
-        df = pd.DataFrame(index=range(num_trials), columns=columns)
+        df = pd.DataFrame(index=range(num_trials * len(metrics)), columns=columns)
         df['Anchor'] = anchor
         df['Model'] = model_type
         df['Anchor Shape'] = trials.all_stims[anchor]['shape']
         df['Anchor Texture'] = trials.all_stims[anchor]['texture']
         df['Anchor Color'] = trials.all_stims[anchor]['color']
 
-        for i in range(num_trials):  # Iterate over possible trials
-            trial = anchor_trials[i]
-            shape_match = trial[1]
-            texture_match = trial[2]
-            color_match = trial[3]
+        metric_mult = 0  # Ensures correct placement of results
 
-            df.at[i, 'Shape Match'] = shape_match[:-4]
-            df.at[i, 'Texture Match'] = texture_match[:-4]
-            df.at[i, 'Color Match'] = color_match[:-4]
+        for metric in metrics:  # Iterate over distance metrics
+            step = metric_mult * num_trials
 
-            # Get image embeddings
-            anchor_output = torch.FloatTensor(embeddings[anchor])
-            shape_output = torch.FloatTensor(embeddings[shape_match])
-            texture_output = torch.FloatTensor(embeddings[texture_match])
-            color_output = torch.FloatTensor(embeddings[color_match])
+            for i in range(num_trials):  # Iterate over possible trials
+                df.at[i + step, 'Metric'] = metric
 
-            if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4'\
-                    or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
-                anchor_output = torch.squeeze(anchor_output, 0)
-                shape_output = torch.squeeze(shape_output, 0)
-                texture_output = torch.squeeze(texture_output, 0)
-                color_output = torch.squeeze(color_output, 0)
+                trial = anchor_trials[i]
+                shape_match = trial[1]
+                texture_match = trial[2]
+                color_match = trial[3]
 
-            # Cosine similarity
-            shape_cos = cosx(anchor_output, shape_output)
-            texture_cos = cosx(anchor_output, texture_output)
-            color_cos = cosx(anchor_output, color_output)
+                df.at[i + step, 'Shape Match'] = shape_match[:-4]
+                df.at[i + step, 'Texture Match'] = texture_match[:-4]
+                df.at[i + step, 'Color Match'] = color_match[:-4]
 
-            # Dot
-            shape_dot = np.dot(anchor_output, shape_output)
-            texture_dot = np.dot(anchor_output, texture_output)
-            color_dot = np.dot(anchor_output, color_output)
+                # Get image embeddings
+                anchor_output = torch.FloatTensor(embeddings[anchor])
+                shape_output = torch.FloatTensor(embeddings[shape_match])
+                texture_output = torch.FloatTensor(embeddings[texture_match])
+                color_output = torch.FloatTensor(embeddings[color_match])
 
-            # Euclidean distance
-            shape_ed = torch.cdist(torch.unsqueeze(shape_output, 0), torch.unsqueeze(anchor_output, 0))
-            texture_ed = torch.cdist(torch.unsqueeze(texture_output, 0), torch.unsqueeze(anchor_output, 0))
-            color_ed = torch.cdist(torch.unsqueeze(color_output, 0), torch.unsqueeze(anchor_output, 0))
+                if model_type == 'clipRN50' or model_type == 'clipViTB32' or model_type == 'clipRN50x4'\
+                        or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
+                    anchor_output = torch.squeeze(anchor_output, 0)
+                    shape_output = torch.squeeze(shape_output, 0)
+                    texture_output = torch.squeeze(texture_output, 0)
+                    color_output = torch.squeeze(color_output, 0)
 
-            df.at[i, 'Shape Cos'] = shape_cos.item()
-            df.at[i, 'Texture Cos'] = texture_cos.item()
-            df.at[i, 'Color Cos'] = color_cos.item()
+                if metric == 'cos':  # Cosine similarity
+                    shape_dist = cosx(anchor_output, shape_output).item()
+                    texture_dist = cosx(anchor_output, texture_output).item()
+                    color_dist = cosx(anchor_output, color_output).item()
+                elif metric == 'dot':  # Dot
+                    shape_dist = np.dot(anchor_output, shape_output).item()
+                    texture_dist = np.dot(anchor_output, texture_output).item()
+                    color_dist = np.dot(anchor_output, color_output).item()
+                else:  # Euclidean distance
+                    shape_dist = torch.cdist(torch.unsqueeze(shape_output, 0), torch.unsqueeze(anchor_output, 0)).item()
+                    texture_dist = torch.cdist(torch.unsqueeze(texture_output, 0), torch.unsqueeze(anchor_output, 0)).item()
+                    color_dist = torch.cdist(torch.unsqueeze(color_output, 0), torch.unsqueeze(anchor_output, 0)).item()
 
-            df.at[i, 'Shape Dot'] = shape_dot
-            df.at[i, 'Texture Dot'] = texture_dot
-            df.at[i, 'Color Dot'] = color_dot
+                df.at[i + step, 'Shape Distance'] = shape_dist
+                df.at[i + step, 'Texture Distance'] = texture_dist
+                df.at[i + step, 'Color Distance'] = color_dist
 
-            df.at[i, 'Shape ED'] = shape_ed.item()
-            df.at[i, 'Texture ED'] = texture_ed.item()
-            df.at[i, 'Color ED'] = color_ed.item()
+                if metric == 'ed':
+                    shape_dist = -shape_dist
+                    texture_dist = -texture_dist
+                    color_dist = -color_dist
 
-            if shape_cos > texture_cos and shape_cos > color_cos:
-                df.at[i, 'Shape Cos Closer'] = 1
-                df.at[i, 'Texture Cos Closer'] = 0
-                df.at[i, 'Color Cos Closer'] = 0
-            elif texture_cos > shape_cos and texture_cos > color_cos:
-                df.at[i, 'Shape Cos Closer'] = 0
-                df.at[i, 'Texture Cos Closer'] = 1
-                df.at[i, 'Color Cos Closer'] = 0
-            else:
-                df.at[i, 'Shape Cos Closer'] = 0
-                df.at[i, 'Texture Cos Closer'] = 0
-                df.at[i, 'Color Cos Closer'] = 1
+                if shape_dist > texture_dist and shape_dist > color_dist:
+                    df.at[i + step, 'Shape Match Closer'] = 1
+                    df.at[i + step, 'Texture Match Closer'] = 0
+                    df.at[i + step, 'Color Match Closer'] = 0
+                elif texture_dist > shape_dist and texture_dist > color_dist:
+                    df.at[i + step, 'Shape Match Closer'] = 0
+                    df.at[i + step, 'Texture Match Closer'] = 1
+                    df.at[i + step, 'Color Match Closer'] = 0
+                else:
+                    df.at[i + step, 'Shape Match Closer'] = 0
+                    df.at[i + step, 'Texture Match Closer'] = 0
+                    df.at[i + step, 'Color Match Closer'] = 1
 
-            if shape_dot > texture_dot and shape_dot > color_dot:
-                df.at[i, 'Shape Dot Closer'] = 1
-                df.at[i, 'Texture Dot Closer'] = 0
-                df.at[i, 'Color Dot Closer'] = 0
-            elif texture_dot > shape_dot and texture_dot > color_dot:
-                df.at[i, 'Shape Dot Closer'] = 0
-                df.at[i, 'Texture Dot Closer'] = 1
-                df.at[i, 'Color Dot Closer'] = 0
-            else:
-                df.at[i, 'Shape Dot Closer'] = 0
-                df.at[i, 'Texture Dot Closer'] = 0
-                df.at[i, 'Color Dot Closer'] = 1
+            metric_mult += 1
 
-            if shape_ed < texture_ed and shape_ed < color_ed:
-                df.at[i, 'Shape ED Closer'] = 1
-                df.at[i, 'Texture ED Closer'] = 0
-                df.at[i, 'Color ED Closer'] = 0
-            elif texture_ed < shape_ed and texture_ed < color_ed:
-                df.at[i, 'Shape ED Closer'] = 0
-                df.at[i, 'Texture ED Closer'] = 1
-                df.at[i, 'Color ED Closer'] = 0
-            else:
-                df.at[i, 'Shape ED Closer'] = 0
-                df.at[i, 'Texture ED Closer'] = 0
-                df.at[i, 'Color ED Closer'] = 1
+        results[anchor] = [df, 'results/' + model_type + '/cartoon/' + anchor[:-4] + '.csv']
 
-        df.to_csv('results/' + model_type + '/cartoon/' + anchor[:-4] + '.csv', index=False)
+    return results
 
 
 def initialize_model(model_type):
@@ -674,7 +631,16 @@ def run_simulations(args, model_type):
             except FileNotFoundError:
                 embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
 
-        triplets(model_type, transform, embeddings, verbose, g, shape_dir)
+        results = triplets(model_type, transform, embeddings, verbose, g, shape_dir)
+
+        # Convert result DataFrames to CSV files
+        for anchor in results.keys():
+            anchor_results = results[anchor]
+            df = anchor_results[0]
+            path = anchor_results[1]
+
+            df.to_csv(path, index=False)
+
         calculate_similarity_totals(model_type, c, g)
 
         if plot:
@@ -697,9 +663,20 @@ def run_simulations(args, model_type):
         except FileNotFoundError:
             embeddings = get_embeddings('', model, model_type, transform, t, g)
 
-        cartoon_stimuli(model_type, transform, embeddings, verbose)
-        calculate_similarity_totals(model_type, c, g)
+        results = cartoon_stimuli(model_type, transform, embeddings, verbose)
 
+        # Convert result DataFrames to CSV files
+        for anchor in results.keys():
+            anchor_results = results[anchor]
+            if anchor_results is None:
+                continue
+            df = anchor_results[0]
+            path = anchor_results[1]
+
+            df.to_csv(path, index=False)
+
+        calculate_similarity_totals(model_type, c, g)
+    '''
     else:  # The code below considers model decisions and not similarities; it isn't used
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
         shape_categories0 = [shape + '0' for shape in shape_categories]
@@ -761,7 +738,7 @@ def run_simulations(args, model_type):
             csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
             calculate_totals(shape_categories, 'results/' + model_type, verbose)
             calculate_proportions('results/' + model_type, verbose)
-
+    '''
 
 if __name__ == '__main__':
     """This file is used to load models, retrieve image embeddings, and run simulations.
@@ -786,6 +763,16 @@ if __name__ == '__main__':
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
                   'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
                   'swav', 'mocov2']
+
+    try:
+        os.mkdir('results')
+    except FileExistsError:
+        pass
+
+    try:
+        os.mkdir('figures')
+    except FileExistsError:
+        pass
 
     if a:
         if not plot:

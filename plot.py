@@ -83,6 +83,8 @@ def plot_similarity_histograms(model_type, g):
     :param g: true if using the grayscale Geirhos dataset
     """
 
+    # NOTE: THIS CODE NEEDS TO BE MADE COMPATIBLE WITH THE NEW CSV FORMAT. DO NOT RUN YET
+
     # Create directory
     if g:
         plot_dir = 'figures/' + model_type + '/grayscale'
@@ -263,14 +265,18 @@ def plot_similarity_bar(g, c):
     for model in model_types:
         df = pd.read_csv('results/' + model + '/' + sub + '/proportions.csv')
 
-        sim_cos = [float(df['Shape Cos Closer']), float(df['Texture Cos Closer'])]
-        sim_dot = [float(df['Shape Dot Closer']), float(df['Texture Dot Closer'])]
-        sim_ed = [float(df['Shape ED Closer']), float(df['Texture ED Closer'])]
+        cos_row = df.loc[df['Metric'] == 'cos']
+        dot_row = df.loc[df['Metric'] == 'dot']
+        ed_row = df.loc[df['Metric'] == 'ed']
+
+        sim_cos = [float(cos_row['Shape Match Closer']), float(cos_row['Texture Match Closer'])]
+        sim_dot = [float(dot_row['Shape Match Closer']), float(dot_row['Texture Match Closer'])]
+        sim_ed = [float(ed_row['Shape Match Closer']), float(ed_row['Texture Match Closer'])]
 
         if c:
-            sim_cos.append(float(df['Color Cos Closer']))
-            sim_dot.append(float(df['Color Dot Closer']))
-            sim_ed.append(float(df['Color ED Closer']))
+            sim_cos.append(float(cos_row['Color Match Closer']))
+            sim_dot.append(float(dot_row['Color Match Closer']))
+            sim_ed.append(float(ed_row['Color Match Closer']))
 
         proportions[model][0, :] = sim_cos
         proportions[model][1, :] = sim_dot
@@ -302,8 +308,6 @@ def plot_similarity_bar(g, c):
     pdf = pd.DataFrame(proportions2, index=model_labels)
 
     plt.style.use('ggplot')
-
-    #fig, ax = plt.subplots()
 
     colors = [['#345eeb', '#1b6600', '#8f178d'], ['#4aace8', '#4cb825', '#cc43de'], ['#81d0f0', '#a3eb5b', '#eca1ed']]
     distance_metrics = [['Cosine Similarity', 'cos'], ['Euclidean Distance', 'ed'], ['Dot Product', 'dot']]

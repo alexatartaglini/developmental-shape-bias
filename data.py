@@ -167,13 +167,18 @@ class GeirhosTriplets:
     The purpose of these triplets is to measure similarity between shape matches/texture
     matches and the anchor image after having been passed through a model."""
 
-    def __init__(self, shape_dir, transform):
+    def __init__(self, shape_dir, transform, same_instance=True):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
 
         :param shape_dir: directory for the Geirhos dataset.
         :param transform: a set of image transformations
+        :param same_instance: true if shape/texture matches should be by specific instance -
+                              ie. cat4 is a match for cat4 but not for cat1. When false,
+                              shape/texture matches are exclusively different instances -
+                              ie. cat4 is a match for cat1, but cat4 is not a match for
+                              cat4.
         """
 
         self.shape_classes = {}
@@ -210,7 +215,10 @@ class GeirhosTriplets:
         # Generate/load triplets
         try:
             # Load triplets
-            self.triplets_by_image = json.load(open('geirhos_triplets.json'))
+            if same_instance:
+                self.triplets_by_image = json.load(open('geirhos_triplets.json'))
+            else:
+                self.triplets_by_image = json.load(open('geirhos_triplets_different_instances.json'))
             self.all_triplets = self.triplets_by_image['all']
             self.triplets_by_image.pop('all')
 
@@ -220,8 +228,15 @@ class GeirhosTriplets:
 
             for image in self.shape_classes.keys(): # Iterate over anchor images
                 shape = self.shape_classes[image]['shape']
+                texture = self.shape_classes[image]['texture']
                 shape_spec = self.shape_classes[image]['shape_spec']
                 texture_spec = self.shape_classes[image]['texture_spec']
+
+                if not same_instance:
+                    shape_spec1 = shape_spec
+                    texture_spec1 = texture_spec
+                    shape_spec = shape
+                    texture_spec = texture
 
                 self.triplets_by_image[image] = {}
                 self.triplets_by_image[image]['shape matches'] = []
@@ -232,11 +247,17 @@ class GeirhosTriplets:
                     shape_match = shape_match.split('/')[-1]
                     if shape_match == image or shape_match not in self.shape_classes.keys():
                         continue
+                    if not same_instance:
+                        if shape_spec1 == self.shape_classes[shape_match]['shape_spec']:
+                            continue
                     self.triplets_by_image[image]['shape matches'].append(shape_match)
-                for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '.png'):
+                for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '*.png'):
                     texture_match = texture_match.split('/')[-1]
                     if texture_match == image or texture_match not in self.shape_classes.keys():
                         continue
+                    if not same_instance:
+                        if texture_spec1 == self.shape_classes[texture_match]['texture_spec']:
+                            continue
                     self.triplets_by_image[image]['texture matches'].append(texture_match)
 
                 for shape_match in self.triplets_by_image[image]['shape matches']:
@@ -248,7 +269,11 @@ class GeirhosTriplets:
             self.triplets_by_image['all'] = self.all_triplets
 
             # Save dictionary as a JSON file
-            with open('geirhos_triplets.json', 'w') as file:
+            if same_instance:
+                triplet_dir = 'geirhos_triplets.json'
+            else:
+                triplet_dir = 'geirhos_triplets_different_instances.json'
+            with open(triplet_dir, 'w') as file:
                 json.dump(self.triplets_by_image, file)
 
     def getitem(self, triplet):

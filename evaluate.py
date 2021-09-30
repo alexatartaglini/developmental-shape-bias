@@ -183,15 +183,13 @@ def calculate_proportions(result_dir, verbose=False):
     file.close()
 
 
-def calculate_similarity_totals(model_type, c, g, matrix=False):
+def calculate_similarity_totals(model_type, c, g):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/
     Euclidean distance is closer for a given model. Stores proportions as a csv.
 
     :param model_type: saycam, resnet50, etc.
     :param c: true if the artificial/cartoon stimulus dataset is being used.
-    :param g: true if grayscale dataset is being used.
-    :param matrix: true if you want to calculate a matrix of totals instead of
-                   proportions."""
+    :param g: true if grayscale dataset is being used."""
 
     if c:
         sim_dir = 'results/' + model_type + '/cartoon/'
@@ -200,42 +198,18 @@ def calculate_similarity_totals(model_type, c, g, matrix=False):
     else:
         sim_dir = 'results/' + model_type +'/similarity/'
 
-    if not matrix:
-        if c:
-            columns = ['Model', 'Shape Cos Closer', 'Texture Cos Closer', 'Color Cos Closer',
-                       'Shape Dot Closer', 'Texture Dot Closer', 'Color Dot Closer',
-                       'Shape ED Closer', 'Texture ED Closer', 'Color ED Closer']
-        else:
-            columns = ['Model', 'Shape Dot Closer', 'Shape Cos Closer', 'Texture Dot Closer', 'Texture Cos Closer',
-                   'Shape ED Closer', 'Texture ED Closer']
-        results = pd.DataFrame(index=range(1), columns=columns)
+    metrics = ['cos', 'dot', 'ed']
+    # Values for dictionary below: [shape_closer, texture_closer, color_closer]
+    results_by_metric = {key: [0, 0, 0] for key in metrics}
 
-        shape_dot = 0
-        shape_cos = 0
-        shape_ed = 0
-        texture_dot = 0
-        texture_cos = 0
-        texture_ed = 0
-        color_dot = 0
-        color_cos = 0
-        color_ed = 0
-        num_rows = 0
-
+    if c:
+        columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer',
+                   'Color Match Closer']
     else:
-        # Matrix: [0, 0] = shape match w/ dot and shape match w/ cos
-        # [0, 1] = texture match w/ dot and shape match w/ cos
-        # [1, 0] = shape match w/ dot and texture match w/ cos
-        # [1, 1] = texture match w/ dot and texture match w/ cos
-        columns = ['Model', ' ', 'Shape Match with Dot Product', 'Texture Match with Dot Product']
-        results = pd.DataFrame(index=range(2), columns=columns)
-        results.at[0, ' '] = 'Shape Match with Cosine Similarity'
-        results.at[1, ' '] = 'Texture Match with Cosine Similarity'
+        columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer']
 
-        m0_0 = 0
-        m0_1 = 0
-        m1_0 = 0
-        m1_1 = 0
-
+    results = pd.DataFrame(index=range(len(metrics)), columns=columns)
+    num_rows = 0
     results.at[:, 'Model'] = model_type
 
     for file in glob.glob(sim_dir + '*.csv'):
@@ -246,113 +220,35 @@ def calculate_similarity_totals(model_type, c, g, matrix=False):
         df = pd.read_csv(file)
 
         for index, row in df.iterrows():
-            shape_cos_closer = int(row['Shape Cos Closer'])
-            shape_dot_closer = int(row['Shape Dot Closer'])
-            shape_ed_closer = int(row['Shape ED Closer'])
+            metric = row['Metric']
 
-            texture_cos_closer = int(row['Texture Cos Closer'])
-            texture_dot_closer = int(row['Texture Dot Closer'])
-            texture_ed_closer = int(row['Texture ED Closer'])
+            shape_closer = int(row['Shape Match Closer'])
+            texture_closer = int(row['Texture Match Closer'])
+
+            results_by_metric[metric][0] += shape_closer
+            results_by_metric[metric][1] += texture_closer
 
             if c:
-                color_cos_closer = int(row['Color Cos Closer'])
-                color_dot_closer = int(row['Color Dot Closer'])
-                color_ed_closer = int(row['Color ED Closer'])
+                color_closer = int(row['Color Match Closer'])
 
-            if not matrix:
-                shape_cos += shape_cos_closer
-                shape_dot += shape_dot_closer
-                shape_ed += shape_ed_closer
-                texture_cos += texture_cos_closer
-                texture_dot += texture_dot_closer
-                texture_ed += texture_ed_closer
-                if c:
-                    color_cos += color_cos_closer
-                    color_dot += color_dot_closer
-                    color_ed += color_ed_closer
-                num_rows += 1
+                results_by_metric[metric][2] += color_closer
 
-            else:
-                if shape_dot_closer == 1:
-                    if shape_cos_closer == 1:
-                        m0_0 += 1
-                    elif texture_cos_closer == 1:
-                        m1_0 += 1
-                elif texture_dot_closer == 1:
-                    if shape_cos_closer == 1:
-                        m0_1 += 1
-                    elif texture_cos_closer == 1:
-                        m1_1 += 1
+            num_rows += 1
 
-    if not matrix:
-        results.at[0, 'Shape Cos Closer'] = shape_cos / num_rows
-        results.at[0, 'Shape Dot Closer'] = shape_dot / num_rows
-        results.at[0, 'Shape ED Closer'] = shape_ed / num_rows
+    num_rows = num_rows // len(metrics)  # Each triplet appears len(metric) times.
+    print(num_rows)
+    print(results_by_metric)
 
-        results.at[0, 'Texture Cos Closer'] = texture_cos / num_rows
-        results.at[0, 'Texture Dot Closer'] = texture_dot / num_rows
-        results.at[0, 'Texture ED Closer'] = texture_ed / num_rows
+
+    for i in range(len(metrics)):
+        metric = metrics[i]
+        metric_results = results_by_metric[metric]  # [shape_closer, texture_closer, color_closer]
+
+        results.at[i, 'Metric'] = metric
+        results.at[i, 'Shape Match Closer'] = metric_results[0] / num_rows
+        results.at[i, 'Texture Match Closer'] = metric_results[1] / num_rows
 
         if c:
-            results.at[0, 'Color Cos Closer'] = color_cos / num_rows
-            results.at[0, 'Color Dot Closer'] = color_dot / num_rows
-            results.at[0, 'Color ED Closer'] = color_ed / num_rows
+            results.at[i, 'Color Match Closer'] = metric_results[2] / num_rows
 
-        results.to_csv(sim_dir + 'proportions.csv', index=False)
-    else:
-        results.at[0, 'Shape Match with Dot Product'] = m0_0
-        results.at[1, 'Shape Match with Dot Product'] = m1_0
-        results.at[0, 'Texture Match with Dot Product'] = m0_1
-        results.at[1, 'Texture Match with Dot Product'] = m1_1
-
-        results.to_csv(sim_dir + 'matrix.csv', index=False)
-
-
-def calculate_similarity_averages(model_type, shape_categories, plot):
-    """Calculates average dot product/cosine similarity between an anchor image shape
-    class and its shape/texture matches. Stores results in a csv. Optionally generates
-    a plot.
-
-    :param model_type: resnet50, saycam, etc.
-    :param shape_categories: a list of the 16 Geirhos classes.
-    :param plot: true if plot should be generated.
-    """
-
-    columns = ['Model', 'Anchor Image Shape', 'Average Dot Shape', 'Average Cos Shape',
-               'Average Dot Texture', 'Average Cos Texture']
-    results = pd.DataFrame(index=range(len(shape_categories)), columns=columns)
-    result_dir = 'results/' + model_type + '/similarity'
-
-    results.at[:, 'Model'] = model_type
-
-    for i in range(len(shape_categories)):  # Iterate over anchor image shapes
-        anchor_shape = shape_categories[i]
-
-        shape_dot = 0
-        shape_cos = 0
-        texture_dot = 0
-        texture_cos = 0
-        num_triplets = 0
-
-        for file in glob.glob(result_dir + '/' + anchor_shape + '*.csv'):  # Sum results by shape
-            df = pd.read_csv(file)
-
-            for index, row in df.iterrows():
-                shape_dot += float(row['Shape Dot'])
-                shape_cos += float(row['Shape Cos'])
-                texture_dot += float(row['Texture Dot'])
-                texture_cos += float(row['Texture Cos'])
-                num_triplets += 1
-
-        shape_dot = shape_dot / num_triplets
-        shape_cos = shape_cos / num_triplets
-        texture_dot = texture_dot / num_triplets
-        texture_cos = texture_cos / num_triplets
-
-        results.at[i, 'Anchor Image Shape'] = anchor_shape
-        results.at[i, 'Average Dot Shape'] = shape_dot
-        results.at[i, 'Average Cos Shape'] = shape_cos
-        results.at[i, 'Average Dot Texture'] = texture_dot
-        results.at[i, 'Average Cos Texture'] = texture_cos
-
-    results.to_csv(result_dir + '/averages.csv', index=False)
+    results.to_csv(sim_dir + 'proportions.csv', index=False)
