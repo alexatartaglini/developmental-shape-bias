@@ -16,8 +16,8 @@ import pandas as pd
 import glob
 from PIL import Image
 from data import GeirhosStyleTransferDataset, GeirhosTriplets, CartoonStimTrials
-from plot import plot_class_values, plot_similarity_histograms, plot_norm_histogram, plot_similarity_bar
-from evaluate import csv_class_values, calculate_totals, calculate_proportions, calculate_similarity_totals
+from plot import plot_similarity_histograms, plot_norm_histogram, plot_similarity_bar
+from evaluate import calculate_similarity_totals, shape_bias_rankings
 import clip
 
 
@@ -759,6 +759,8 @@ if __name__ == '__main__':
 
     a = args.all
     plot = args.plot
+    t = args.triplets
+    c = args.cartoon
 
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
                   'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
@@ -779,9 +781,15 @@ if __name__ == '__main__':
             for model_type in model_list:
                 print("Running simulations for {0}".format(model_type))
                 run_simulations(args, model_type)
+
+            print("\nCalculating ranks...")
+            if t:
+                shape_bias_rankings('similarity')
+            elif c:
+                shape_bias_rankings('cartoon')
+
         else:
             g = args.grayscale
-            c = args.cartoon
             plot_similarity_bar(g, c)
 
             '''

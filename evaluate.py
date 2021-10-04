@@ -252,3 +252,89 @@ def calculate_similarity_totals(model_type, c, g):
             results.at[i, 'Color Match Closer'] = metric_results[2] / num_rows
 
     results.to_csv(sim_dir + 'proportions.csv', index=False)
+
+
+def shape_bias_rankings(simulation):
+    """This function ranks the models in order of highest shape and texture (and color)
+    bias. Stores the rankings in text files inside the results folder.
+
+    :param simulation: the type of simulation to calculate ranks from. eg. similarity
+                       for Geirhos triplets and cartoon for cartoon dataset quadruplets."""
+
+    biases = ['Shape Match Closer', 'Texture Match Closer']
+    bias_titles = {'Shape Match Closer': 'Shape Bias', 'Texture Match Closer': 'Texture Bias'}
+
+    if simulation == 'cartoon':
+        biases.append('Color Match Closer')
+        color_bias_rank = ['/']
+        bias_titles['Color Match Closer'] = 'Color Bias'
+
+    shape_bias_rank = ['/']  # Models before the / are actually shape biased. Models after are not.
+    texture_bias_rank = ['/']
+
+    metrics = ['cos', 'dot', 'ed']
+    metric_titles = {'cos': 'Cosine Similarity', 'dot': 'Dot Product', 'ed': 'Euclidean Distance'}
+
+    ranks = {rank: {metric: ['/'] for metric in metrics} for rank in biases}
+
+    for bias in biases:
+        for i in range(len(metrics)):
+            bias_unsorted = []  # ranks for models that ARE eg. shape biased
+            not_bias_unsorted = []  # ranks for models that ARE NOT eg. shape biased
+
+            for model_dir in glob.glob('results/*/'):
+                biased = True
+
+                model = model_dir.split('/')[1]
+                props = pd.read_csv(model_dir + simulation + '/proportions.csv')  # DF of proportions
+
+                row = props.iloc[i, :]
+                metric = row['Metric']
+                val = row[bias]
+
+                for other_bias in biases:
+                    if val < row[other_bias]:
+                        biased = False
+                        not_bias_unsorted.append([model, val])
+                        break
+                if biased:
+                    bias_unsorted.append([model, val])
+
+            not_bias_sorted = sorted(not_bias_unsorted, key=lambda m: m[1])
+            for i in range(len(not_bias_sorted)):
+                not_bias_sorted[i] = not_bias_sorted[i][0]
+
+            not_bias_sorted.reverse()
+
+            bias_sorted = sorted(bias_unsorted, key=lambda m: m[1])
+            for i in range(len(bias_sorted)):
+                bias_sorted[i] = bias_sorted[i][0]
+
+            if bias_sorted:
+                for m in bias_sorted:
+                    ranks[bias][metric].insert(0, m)
+
+            if not_bias_sorted:
+                for m in not_bias_sorted:
+                    ranks[bias][metric].append(m)
+
+    for metric in metrics:
+        report_str = 'Model Rankings by {0}\n'.format(metric_titles[metric])
+        report_str += '-----------------------------------------------------\n'
+
+        for bias in biases:
+            report_str += '-{0} Rankings:\n\n'.format(bias_titles[bias])
+            rankings = ranks[bias][metric]
+            j = 0
+
+            for i in range(len(rankings)):
+                m = rankings[i]
+                if m == '/':
+                    j = 1
+                    report_str += '////(models above this line are {0}ed)////\n'.format(bias_titles[bias].lower())
+                else:
+                    report_str += '{0:<3} {1}\n'.format(str(i + 1 - j) + '.', m)
+            report_str += '\n-----------------------------------------------------\n'
+
+        with open('results/' + simulation + '_rankings_' + metric + '.txt', 'w') as f:
+            f.write(report_str)
