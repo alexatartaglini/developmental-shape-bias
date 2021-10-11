@@ -4,13 +4,14 @@ import json
 from random import sample
 
 
-def write_html(model_type, simulation):
+def write_html(model_type, simulation, num_triplets):
     """This function creates an HTML page for a given model and simulation type (triplets
     or cartoon quadruplets). Each page contains visualizations of each triplet/quadruplet
     and the model's responses to the stimuli. The HTML script is written to a file.
 
     :param model_type: saycam, resnet50, etc.
-    :param simulation: 'triplets' for Geirhos triplets, 'cartoon' for cartoon dataset."""
+    :param simulation: 'triplets' for Geirhos triplets, 'cartoon' for cartoon dataset
+    :param num_triplets: number of triplets to include (randomly sampled)"""
 
     im_titles = ['Anchor', 'Shape Match', 'Texture Match']
 
@@ -29,10 +30,10 @@ def write_html(model_type, simulation):
         dataset = 'Cartoon Dataset'
         term = 'Quadruplet'
         im_titles.append('Color Match')
-        padding = '35px'
+        padding = '491px'
         size = 124
 
-    stimuli = sample(stimuli, 20)
+    stimuli = sample(stimuli, num_triplets)
 
     html_string = ""
 
@@ -89,8 +90,8 @@ def write_html(model_type, simulation):
 
             if im_titles[j] == match:
                 html_string += f"""
-                        <div class="col-{len(triplet)} text-center">
-                          <strong>{im_titles[j]}</strong>
+                        <div class="col-3 text-center">
+                          <strong>{im_titles[j]}</strong><br>
                           <figure class="figure">
                           <img src="../../{im_path}" class="figure-img img-fluid" style="border: 3px solid #10F310;width:{size}px;height:{size}px">
                           <figcaption class="figure-caption text-center"><i>{triplet[j][:-4]}</i></figcaption>
@@ -98,8 +99,8 @@ def write_html(model_type, simulation):
                         """
             else:
                 html_string += f"""
-                        <div class="col-{len(triplet)} text-center">
-                          <strong>{im_titles[j]}</strong>
+                        <div class="col-3 text-center">
+                          <strong>{im_titles[j]}</strong><br>
                           <figure class="figure">
                           <img src="../../{im_path}" class="figure-img img-fluid" style="border: 3px solid #000000;width:{size}px;height:{size}px">
                           <figcaption class="figure-caption text-center"><i>{triplet[j][:-4]}</i></figcaption>
@@ -198,4 +199,5 @@ if __name__ == "__main__":
                   'swav', 'mocov2']
 
     for model in model_list:
-        write_html(model, 'triplets')
+        write_html(model, 'cartoon', 200)
+        write_html(model, 'triplets', 200)
