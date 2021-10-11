@@ -244,11 +244,12 @@ def plot_similarity_bar(g, c):
     :param g: True if using the grayscale Geirhos dataset.
     :param c: True if using the artificial/cartoon stimuli dataset."""
 
-    model_types = ['resnet50', 'dino_resnet50', 'mocov2', 'swav', 'alexnet', 'vgg16', 'clipRN50', 'clipRN50x4',
-                  'clipRN50x16', 'clipViTB32', 'clipViTB16', 'saycam', 'saycamA', 'saycamS', 'saycamY']
-    model_labels = ['ResNet-50', 'DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'AlexNet',
-                    'VGG-16', 'CLIP-ResNet50', 'CLIP-ResNet50x4', 'CLIP-ResNet50x16', 'CLIP-ViTB/32',
-                    'CLIP-ViTB/16', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
+    model_types = ['dino_resnet50', 'mocov2', 'swav', 'clipRN50', 'clipRN50x4', 'clipRN50x16',
+                   'clipViTB32', 'clipViTB16', 'alexnet', 'vgg16', 'resnet50', 'saycam', 'saycamA',
+                   'saycamS', 'saycamY']
+    model_labels = ['DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'CLIP-ResNet50',
+                    'CLIP-ResNet50x4', 'CLIP-ResNet50x16', 'CLIP-ViTB/32', 'CLIP-ViTB/16', 'AlexNet',
+                    'VGG-16', 'ResNet-50', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
 
     if c:
         sub = 'cartoon'
@@ -279,23 +280,23 @@ def plot_similarity_bar(g, c):
             sim_ed.append(float(ed_row['Color Match Closer']))
 
         proportions[model][0, :] = sim_cos
-        proportions[model][1, :] = sim_dot
-        proportions[model][2, :] = sim_ed
+        proportions[model][1, :] = sim_ed
+        proportions[model][2, :] = sim_dot
 
     if c:
         measures = [['shape cos', 'texture cos', 'color cos'],
-                    ['shape dot', 'texture dot', 'color dot'],
-                    ['shape ed', 'texture ed', 'color ed']]
+                    ['shape ed', 'texture ed', 'color ed'],
+                    ['shape dot', 'texture dot', 'color dot']]
         measures2 = ['shape cos', 'texture cos', 'color cos',
-                     'shape dot', 'texture dot', 'color dot',
-                     'shape ed', 'texture ed', 'color ed']
+                     'shape ed', 'texture ed', 'color ed',
+                     'shape dot', 'texture dot', 'color dot']
     else:
         measures = [['shape cos', 'texture cos'],
-                    ['shape dot', 'texture dot'],
-                    ['shape ed', 'texture ed']]
+                    ['shape ed', 'texture ed'],
+                    ['shape dot', 'texture dot']]
         measures2 = ['shape cos', 'texture cos',
-                     'shape dot', 'texture dot',
-                     'shape ed', 'texture ed']
+                     'shape ed', 'texture ed',
+                     'shape dot', 'texture dot']
 
     proportions2 = {key: np.zeros(len(model_types)).tolist() for key in measures2}
     for i in range(3):
@@ -326,3 +327,127 @@ def plot_similarity_bar(g, c):
         plt.xlabel('Proportion', size=13, color='black')
         plt.ylabel('Model', size=13, color='black')
         plt.savefig('figures/proportions_' + sub + '_' + distance_metrics[i][1] + '.png', bbox_inches = "tight")
+
+
+def plot_number_of_triplets(c):
+    """Plots a histogram of the number of triplets that can be formed using a given
+    image as an anchor. The plots are organized by anchor image shape, texture, and color
+    classes."""
+
+    shape_classes = json.load(open('geirhos_shape_classes.json'))
+    triplets = json.load(open('geirhos_triplets.json'))
+    anchors = shape_classes.keys()
+
+    frequencies = {key: 0 for key in anchors}
+
+    colors = ['#f6eeeb', '#ead5cf', '#c8e0e4', '#7197a0', '#223053', '#755b99', '#fc6c4f', '#bb0a65',
+              '#a4da56', '#311f31', '#d9d2e9', '#960206', '#cb020c', '#5b1c1e', '#3a542f', '#a36b32']
+    classes_to_colors = {key.split('/')[2]: None for key in glob.glob('stimuli-shape/style-transfer/*/')}
+    shape_class_frequencies = {key: 0 for key in classes_to_colors.keys()}
+    texture_class_frequencies = {key: 0 for key in classes_to_colors.keys()}
+
+    for i in range(len(colors)):
+        c = list(classes_to_colors.keys())[i]
+        classes_to_colors[c] = colors[i]
+
+    for anchor in anchors:
+        anchor_triplets = triplets[anchor]['triplets']
+        frequencies[anchor] += len(anchor_triplets)
+        shape_class_frequencies[shape_classes[anchor]['shape']] += len(anchor_triplets)
+        texture_class_frequencies[shape_classes[anchor]['texture']] += len(anchor_triplets)
+
+    shape_height = []
+    texture_height = []
+
+    shape_class_height = []
+    texture_class_height = []
+
+    color_shape = []
+    color_texture = []
+
+    color_class = []
+
+    anchors_by_shape = sorted(anchors)
+    anchors_by_texture = sorted(anchors, key=lambda anchor: anchor.split('-')[1][:-4])
+
+    for anchor in anchors_by_shape:
+        if frequencies[anchor] == 0:
+            continue
+        shape_height.append(frequencies[anchor])
+        color_shape.append(classes_to_colors[shape_classes[anchor]['shape']])
+
+    for anchor in anchors_by_texture:
+        if frequencies[anchor] == 0:
+            continue
+        texture_height.append(frequencies[anchor])
+        color_texture.append(classes_to_colors[shape_classes[anchor]['texture']])
+
+    for c in sorted(list(classes_to_colors.keys())):
+        shape_class_height.append(shape_class_frequencies[c])
+        texture_class_height.append(texture_class_frequencies[c])
+        color_class.append(classes_to_colors[c])
+
+    plt.style.use('ggplot')
+    fig, ax = plt.subplots()
+    fig.set_size_inches(16, 9)
+    ax.get_xaxis().set_visible(False)
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=classes_to_colors[label]) for label in sorted(list(classes_to_colors.keys()))]
+    plt.legend(handles, sorted(list(classes_to_colors.keys())), loc='best')
+    plt.bar(anchors_by_shape, shape_height, color=color_shape)
+    plt.title('Number of Triplets per Anchor Image, Organized by Shape of the Anchor')
+    plt.ylabel('Number of triplets')
+    plt.xlabel('Anchor image')
+    plt.tight_layout()
+    plt.savefig('figures/anchors_by_shape.png')
+
+    plt.style.use('ggplot')
+    fig, ax = plt.subplots()
+    fig.set_size_inches(16, 9)
+    ax.get_xaxis().set_visible(False)
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=classes_to_colors[label]) for label in
+               sorted(list(classes_to_colors.keys()))]
+    plt.legend(handles, sorted(list(classes_to_colors.keys())), loc='best')
+    plt.bar(anchors_by_texture, texture_height, color=color_shape)
+    plt.title('Number of Triplets per Anchor Image, Organized by Texture of the Anchor')
+    plt.ylabel('Number of triplets')
+    plt.xlabel('Anchor image')
+    plt.tight_layout()
+    plt.savefig('figures/anchors_by_texture.png')
+
+    plt.style.use('ggplot')
+    fig, ax = plt.subplots()
+    fig.set_size_inches(16, 9)
+    ax.get_xaxis().set_visible(False)
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=classes_to_colors[label]) for label in
+               sorted(list(classes_to_colors.keys()))]
+    plt.legend(handles, sorted(list(classes_to_colors.keys())), loc='best')
+    plt.bar(sorted(list(classes_to_colors.keys())), shape_class_height, color=color_class)
+    plt.title('Number of Triplets per Anchor Image Shape Class')
+    plt.ylabel('Number of triplets')
+    plt.xlabel('Anchor image class')
+    plt.tight_layout()
+    plt.savefig('figures/anchors_by_shape_class.png')
+
+    plt.style.use('ggplot')
+    fig, ax = plt.subplots()
+    fig.set_size_inches(16, 9)
+    ax.get_xaxis().set_visible(False)
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=classes_to_colors[label]) for label in
+               sorted(list(classes_to_colors.keys()))]
+    plt.legend(handles, sorted(list(classes_to_colors.keys())), loc='best')
+    plt.bar(sorted(list(classes_to_colors.keys())), texture_class_height, color=color_class)
+    plt.title('Number of Triplets per Anchor Image Texture Class')
+    plt.ylabel('Number of triplets')
+    plt.xlabel('Anchor image class')
+    plt.tight_layout()
+    plt.savefig('figures/anchors_by_texture_class.png')
+
+
+
+
+if __name__ == "__main__":
+    plot_number_of_triplets(False)
