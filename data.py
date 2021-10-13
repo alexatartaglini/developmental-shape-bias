@@ -7,6 +7,8 @@ import json
 import glob
 import warnings
 import cv2
+from math import inf
+from random import sample, shuffle
 warnings.filterwarnings("ignore")
 
 
@@ -167,13 +169,13 @@ class GeirhosTriplets:
     The purpose of these triplets is to measure similarity between shape matches/texture
     matches and the anchor image after having been passed through a model."""
 
-    def __init__(self, shape_dir, transform, same_instance=True):
+    def __init__(self, transform, shape_dir='stimuli-shape/style-transfer', same_instance=True):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
 
-        :param shape_dir: directory for the Geirhos dataset.
         :param transform: a set of image transformations
+        :param shape_dir: directory for the Geirhos dataset.
         :param same_instance: true if shape/texture matches should be by specific instance -
                               ie. cat4 is a match for cat4 but not for cat1. When false,
                               shape/texture matches are exclusively different instances -
@@ -224,8 +226,6 @@ class GeirhosTriplets:
 
         except FileNotFoundError:
             # Generate triplets
-            self.all_triplets = []
-
             for image in self.shape_classes.keys(): # Iterate over anchor images
                 shape = self.shape_classes[image]['shape']
                 texture = self.shape_classes[image]['texture']
@@ -244,6 +244,8 @@ class GeirhosTriplets:
                 self.triplets_by_image[image]['triplets'] = []
 
                 for shape_match in glob.glob(shape_dir + '/' + shape + '/' + shape_spec + '*.png'):
+                    if shape_match.split('/')[3].split('-')[0] != shape_spec:
+                        continue
                     shape_match = shape_match.split('/')[-1]
                     if shape_match == image or shape_match not in self.shape_classes.keys():
                         continue
@@ -251,7 +253,10 @@ class GeirhosTriplets:
                         if shape_spec1 == self.shape_classes[shape_match]['shape_spec']:
                             continue
                     self.triplets_by_image[image]['shape matches'].append(shape_match)
+
                 for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '*.png'):
+                    if texture_match.split('/')[3].split('-')[1][:-4] != texture_spec:
+                        continue
                     texture_match = texture_match.split('/')[-1]
                     if texture_match == image or texture_match not in self.shape_classes.keys():
                         continue
@@ -300,6 +305,44 @@ class GeirhosTriplets:
             texture_im = self.transform(texture_im)
 
         return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
+
+    def max_num_triplets(self):
+        """This method returns the minimum number of triplets that an anchor image
+        in the triplet dataset has. This minimum number should be treated as a
+        maximum number of triplets allowed for a given anchor to be included in
+        the results; this way, all images are equally represented as anchors. This
+        ensures that certain images are not overrepresented as anchors.
+
+        :return: a cap for the number of triplets that should be allowed for any given
+                 anchor."""
+
+        min_triplets = inf
+
+        for anchor in self.triplets_by_image.keys():
+            num_triplets = len(self.triplets_by_image[anchor]['triplets'])
+
+            if num_triplets < min_triplets:
+                min_triplets = num_triplets
+
+        return min_triplets
+
+    def select_capped_triplets(self):
+        """This method randomly selects min_triplets (see max_num_triplets) triplets for
+        each anchor image and inserts these into a dictionary indexed by anchor image.
+        This allows one to evaluate a set of triplets such that no anchor image is
+        overrepresented.
+
+        :return: a dictionary of randomly selected triplets per anchor image such that
+                 each anchor image has an equal number of triplets."""
+
+        cap = self.max_num_triplets()
+        selection = {}
+
+        for anchor in self.triplets_by_image.keys():
+            triplets = self.triplets_by_image[anchor]['triplets']
+            selection[anchor] = sample(triplets, cap)
+
+        return selection
 
 
 class CartoonStimTrials(Dataset):
