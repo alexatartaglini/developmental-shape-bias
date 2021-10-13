@@ -264,7 +264,7 @@ def plot_similarity_bar(g, c):
     proportions = {key: np.zeros((3, d)) for key in model_types}  # Rows: cos,dot,ed. Columns: shape,text,color
 
     for model in model_types:
-        df = pd.read_csv('results/' + model + '/' + sub + '/proportions.csv')
+        df = pd.read_csv('results/' + model + '/' + sub + '/proportions_avg.csv')
 
         cos_row = df.loc[df['Metric'] == 'cos']
         dot_row = df.loc[df['Metric'] == 'dot']

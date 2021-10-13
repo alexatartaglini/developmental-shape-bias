@@ -1,6 +1,7 @@
 import pandas as pd
 import glob
 import os
+from data import GeirhosTriplets, CartoonStimTrials
 
 
 def csv_class_values(shape_dict, shape_categories, shape_spec_dict, csv_dir):
@@ -183,24 +184,25 @@ def calculate_proportions(result_dir, verbose=False):
     file.close()
 
 
-def calculate_similarity_totals(model_type, c, g):
+def calculate_similarity_totals(model_type, c):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/
     Euclidean distance is closer for a given model. Stores proportions as a csv.
 
     :param model_type: saycam, resnet50, etc.
-    :param c: true if the artificial/cartoon stimulus dataset is being used.
-    :param g: true if grayscale dataset is being used."""
+    :param c: true if the artificial/cartoon stimulus dataset is being used."""
+
+    num_draws = 3
 
     if c:
         sim_dir = 'results/' + model_type + '/cartoon/'
-    elif g:
-        sim_dir = 'results/' + model_type + '/grayscale/'
+        dataset = CartoonStimTrials(None)
     else:
         sim_dir = 'results/' + model_type +'/similarity/'
+        dataset = GeirhosTriplets(None)
 
     metrics = ['cos', 'dot', 'ed']
     # Values for dictionary below: [shape_closer, texture_closer, color_closer]
-    results_by_metric = {key: [0, 0, 0] for key in metrics}
+    results_by_metric_total = {key: [0, 0, 0] for key in metrics}
 
     if c:
         columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer',
@@ -209,49 +211,66 @@ def calculate_similarity_totals(model_type, c, g):
         columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer']
 
     results = pd.DataFrame(index=range(len(metrics)), columns=columns)
-    num_rows = 0
     results.at[:, 'Model'] = model_type
 
-    for file in glob.glob(sim_dir + '*.csv'):
+    for random_draw in range(num_draws):
+        selected_triplets = dataset.select_capped_triplets()
+        num_rows = 0
+        results_by_metric = {key: [0, 0, 0] for key in metrics}
 
-        if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv'\
-                or file == sim_dir + 'matrix.csv':
-            continue
-        df = pd.read_csv(file)
+        for file in glob.glob(sim_dir + '*.csv'):
+            if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv'\
+                    or file == sim_dir + 'matrix.csv' or file == sim_dir + 'proportions_avg.csv':
+                continue
 
-        for index, row in df.iterrows():
-            metric = row['Metric']
+            df = pd.read_csv(file)
+            selection = selected_triplets[file.split('/')[3].replace('csv', 'png')]
+            df2 = pd.DataFrame(columns=df.columns, index=range(dataset.max_num_triplets()))
+            df2_idx = 0
 
-            shape_closer = int(row['Shape Match Closer'])
-            texture_closer = int(row['Texture Match Closer'])
+            for index, row in df.iterrows():
+                if c:
+                    triplet = [row['Anchor'], row['Shape Match'] + '.png', row['Texture Match'] + '.png',
+                               row['Color Match'] + '.png']
+                else:
+                    triplet = [row['Anchor'] + '.png', row['Shape Match'] + '.png', row['Texture Match'] + '.png']
 
-            results_by_metric[metric][0] += shape_closer
-            results_by_metric[metric][1] += texture_closer
+                if triplet in selection:
+                    df2.loc[df2_idx, :] = row[:]
+                    df2_idx += 1
 
-            if c:
-                color_closer = int(row['Color Match Closer'])
+            for index, row in df2.iterrows():
+                metric = row['Metric']
 
-                results_by_metric[metric][2] += color_closer
+                shape_closer = int(row['Shape Match Closer'])
+                texture_closer = int(row['Texture Match Closer'])
 
-            num_rows += 1
+                results_by_metric[metric][0] += shape_closer
+                results_by_metric[metric][1] += texture_closer
 
-    num_rows = num_rows // len(metrics)  # Each triplet appears len(metric) times.
-    print(num_rows)
-    print(results_by_metric)
+                if c:
+                    color_closer = int(row['Color Match Closer'])
+                    results_by_metric[metric][2] += color_closer
 
+                num_rows += 1
+
+        num_rows = num_rows // len(metrics)  # Each triplet appears len(metric) times.
+        for i in range(len(metrics)):
+            for j in range(len(metrics[i])):
+                results_by_metric_total[metrics[i]][j] += results_by_metric[metrics[i]][j] / num_rows
 
     for i in range(len(metrics)):
         metric = metrics[i]
-        metric_results = results_by_metric[metric]  # [shape_closer, texture_closer, color_closer]
+        metric_results = results_by_metric_total[metric]  # [shape_closer, texture_closer, color_closer]
 
         results.at[i, 'Metric'] = metric
-        results.at[i, 'Shape Match Closer'] = metric_results[0] / num_rows
-        results.at[i, 'Texture Match Closer'] = metric_results[1] / num_rows
+        results.at[i, 'Shape Match Closer'] = metric_results[0] / num_draws
+        results.at[i, 'Texture Match Closer'] = metric_results[1] / num_draws
 
         if c:
-            results.at[i, 'Color Match Closer'] = metric_results[2] / num_rows
+            results.at[i, 'Color Match Closer'] = metric_results[2] / num_draws
 
-    results.to_csv(sim_dir + 'proportions.csv', index=False)
+    results.to_csv(sim_dir + 'proportions_avg.csv', index=False)
 
 
 def shape_bias_rankings(simulation):
@@ -283,10 +302,12 @@ def shape_bias_rankings(simulation):
             not_bias_unsorted = []  # ranks for models that ARE NOT eg. shape biased
 
             for model_dir in glob.glob('results/*/'):
+                if model_dir == 'results/visualizations/':
+                    continue
                 biased = True
 
                 model = model_dir.split('/')[1]
-                props = pd.read_csv(model_dir + simulation + '/proportions.csv')  # DF of proportions
+                props = pd.read_csv(model_dir + simulation + '/proportions_avg.csv')  # DF of proportions
 
                 row = props.iloc[i, :]
                 metric = row['Metric']

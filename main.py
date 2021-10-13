@@ -209,7 +209,7 @@ def generate_fake_triplets(model_type, model, shape_dir, transform, t, g, c, n=2
             results.at[t, 'Texture Cos Closer'] = 1
 
     results.to_csv('results/' + model_type +'/similarity/fake/fake.csv')
-    calculate_similarity_totals(model_type, c, g)
+    calculate_similarity_totals(model_type, c)
 
 
 def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
@@ -248,8 +248,9 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
                     im_name = im_path.split('/')[3]
                     img.save('stimuli-shape/style-transfer-gray/' + category + '/' + im_name)
 
-    same_instance = True  # Set false if you want matches to exclude same instances
-    t = GeirhosTriplets(shape_dir, transform, same_instance)  # Default transforms
+    # Set same_instance=False if you want matches to exclude same instances.
+    same_instance = True
+    t = GeirhosTriplets(transform, same_instance=same_instance)  # Default transforms.
 
     images = t.shape_classes.keys()
     all_triplets = t.triplets_by_image
@@ -592,7 +593,6 @@ def run_simulations(args, model_type):
         shape_dir = 'stimuli-shape/style-transfer-gray'
     else:
         shape_dir = 'stimuli-shape/style-transfer'
-    texture_dir = 'stimuli-texture/style-transfer'
 
     # Initialize the model and put in evaluation mode; retrieve transforms
     model, penult_model, transform = initialize_model(model_type)
@@ -641,8 +641,6 @@ def run_simulations(args, model_type):
 
             df.to_csv(path, index=False)
 
-        calculate_similarity_totals(model_type, c, g)
-
         if plot:
             plot_similarity_histograms(model_type, g)
             plot_norm_histogram(model_type, c, g)
@@ -674,8 +672,6 @@ def run_simulations(args, model_type):
             path = anchor_results[1]
 
             df.to_csv(path, index=False)
-
-        calculate_similarity_totals(model_type, c, g)
     '''
     else:  # The code below considers model decisions and not similarities; it isn't used
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
@@ -740,6 +736,7 @@ def run_simulations(args, model_type):
             calculate_proportions('results/' + model_type, verbose)
     '''
 
+
 if __name__ == '__main__':
     """This file is used to load models, retrieve image embeddings, and run simulations.
     See the documentation for each function above for more information."""
@@ -780,7 +777,8 @@ if __name__ == '__main__':
         if not plot:
             for model_type in model_list:
                 print("Running simulations for {0}".format(model_type))
-                run_simulations(args, model_type)
+                #run_simulations(args, model_type)
+                #calculate_similarity_totals(model_type, c)
 
             print("\nCalculating ranks...")
             if t:
@@ -792,10 +790,6 @@ if __name__ == '__main__':
             g = args.grayscale
             plot_similarity_bar(g, c)
 
-            '''
-            for model_type in model_list:
-                print("Plotting norm histograms for {0}".format(model_type))
-                plot_norm_histogram(model_type, c, g)
-            '''
     else:
         run_simulations(args, args.model)
+        calculate_similarity_totals(args.model, c)
