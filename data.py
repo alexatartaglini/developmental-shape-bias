@@ -499,3 +499,233 @@ class CartoonStimTrials(Dataset):
             im = self.transform(im)
 
         return im, name
+
+    def select_capped_triplets(self):
+        """Currently just returns all quadruplets."""
+        return self.all_trials
+
+    def max_num_triplets(self):
+        """Currently just returns the total number of quadruplets."""
+        return len(self.all_trials)
+
+
+class SilhouetteTriplets:
+    """This class is a variant of the GeirhosTriplets class. It is almost identical
+    to this class, except it generates stimuli that consist of the original Geirhos
+    style transfer images overlaid with the silhouettes of the shape classes.
+
+    The result is stimuli that are composed of the silhouette of one object and
+    filled with the texture of another. This is an attempt to make texture less
+    salient and devise a more accurate measure of shape bias."""
+
+    def __init__(self, transform, shape_dir='stimuli-shape/style-transfer'):
+        """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
+        triplets_by_image is a dictionary; the keys are image names, and it stores all
+        shape/texture matches plus all possible triplets for a given image (as the anchor).
+
+        :param transform: a set of image transformations
+        :param shape_dir: directory for the Geirhos dataset.
+        :param s_dir: the directory where the shape silhouettes are located.
+        """
+
+        self.shape_classes = {}
+        self.all_triplets = []
+        self.triplets_by_image = {}
+        self.transform = transform
+
+        # Create/load dictionaries containing shape and texture classifications for each image
+        try:
+            # Load dictionary
+            self.shape_classes = json.load(open('geirhos_shape_classes.json'))
+
+        except FileNotFoundError:
+            # Create dictionary
+            for image_dir in glob.glob('stimuli-shape/style-transfer/*/*.png'):
+                image = image_dir.split('/')
+                shape = image[2]  # Shape class of image
+                texture_spec = image[3].split('-')[1].replace('.png', '')  # Specific texture instance, eg. clock2
+                shape_spec = image[3].split('-')[0]  # Specific shape instance, eg. airplane1
+                texture = ''.join([i for i in texture_spec if not i.isdigit()])  # Texture class
+
+                if shape != texture:  # Filter images that are not cue-conflict
+                    self.shape_classes[image[3]] = {}  # Initialize dictionary for single image
+                    self.shape_classes[image[3]]['shape'] = shape
+                    self.shape_classes[image[3]]['texture'] = texture
+                    self.shape_classes[image[3]]['shape_spec'] = shape_spec
+                    self.shape_classes[image[3]]['texture_spec'] = texture_spec
+                    self.shape_classes[image[3]]['dir'] = image_dir
+
+            # Save dictionary as a JSON file
+            with open('geirhos_shape_classes.json', 'w') as file:
+                json.dump(self.shape_classes, file)
+
+        # Generate/load triplets
+        try:
+            # Load triplets
+            self.triplets_by_image = json.load(open('geirhos_triplets.json'))
+            self.all_triplets = self.triplets_by_image['all']
+            self.triplets_by_image.pop('all')
+
+        except FileNotFoundError:
+            # Generate triplets
+            for image in self.shape_classes.keys(): # Iterate over anchor images
+                shape = self.shape_classes[image]['shape']
+                texture = self.shape_classes[image]['texture']
+                shape_spec = self.shape_classes[image]['shape_spec']
+                texture_spec = self.shape_classes[image]['texture_spec']
+
+                self.triplets_by_image[image] = {}
+                self.triplets_by_image[image]['shape matches'] = []
+                self.triplets_by_image[image]['texture matches'] = []
+                self.triplets_by_image[image]['triplets'] = []
+
+                for shape_match in glob.glob(shape_dir + '/' + shape + '/' + shape_spec + '*.png'):
+                    if shape_match.split('/')[3].split('-')[0] != shape_spec:
+                        continue
+                    shape_match = shape_match.split('/')[-1]
+                    if shape_match == image or shape_match not in self.shape_classes.keys():
+                        continue
+                    self.triplets_by_image[image]['shape matches'].append(shape_match)
+
+                for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '*.png'):
+                    if texture_match.split('/')[3].split('-')[1][:-4] != texture_spec:
+                        continue
+                    texture_match = texture_match.split('/')[-1]
+                    if texture_match == image or texture_match not in self.shape_classes.keys():
+                        continue
+                    self.triplets_by_image[image]['texture matches'].append(texture_match)
+
+                for shape_match in self.triplets_by_image[image]['shape matches']:
+                    for texture_match in self.triplets_by_image[image]['texture matches']:
+                        triplet = [image, shape_match, texture_match]
+                        self.triplets_by_image[image]['triplets'].append(triplet)
+                        self.all_triplets.append(triplet)
+
+            self.triplets_by_image['all'] = self.all_triplets
+
+            # Save dictionary as a JSON file
+            triplet_dir = 'geirhos_triplets.json'
+            with open(triplet_dir, 'w') as file:
+                json.dump(self.triplets_by_image, file)
+        
+        self.create_silhouette_stimuli()
+
+    def create_silhouette_stimuli(self, s_dir='stimuli-shape/filled-silhouettes'):
+        """Create and save the silhouette stimuli if they do not already exist."""
+
+        try:
+            os.mkdir('stimuli-shape/texture-silhouettes')
+        except FileExistsError:
+            return
+
+        for im_name in self.shape_classes.keys():
+            im_path = self.shape_classes[im_name]['dir']
+            mask_path = s_dir + '/' + self.shape_classes[im_name]['shape'] + '/' + \
+                        self.shape_classes[im_name]['shape_spec'] + '.png'
+
+            try:
+                os.mkdir('stimuli-shape/texture-silhouettes/' +
+                         self.shape_classes[im_name]['shape'])
+            except FileExistsError:
+                pass
+
+            im = Image.open(im_path)
+            mask = Image.open(mask_path).convert('RGBA')
+            mask_data = mask.getdata()
+
+            new_data = []
+            for item in mask_data:
+                if item[0] == 0 and item[1] == 0 and item[2] == 0:
+                    new_data.append(item)
+                else:
+                    new_data.append((0, 0, 0, 0))
+
+            mask.putdata(new_data)
+
+            base = Image.new('RGB', mask.size, (255, 255, 255))
+            base.paste(im, mask=mask.split()[3])
+            base.save('stimuli-shape/texture-silhouettes/' +
+                         self.shape_classes[im_name]['shape'] + '/' + im_name)
+
+    def __getitem__(self, idx):
+        """For a given singular index, returns the singular image corresponding to that index.
+
+        :param idx: a singular integer index.
+        :return: the image with transforms applied and the image name."""
+
+        name = list(self.shape_classes.keys())[idx]
+        path = 'stimuli-shape/texture-silhouettes/' + self.shape_classes[name]['shape'] + '/' + name
+        im = Image.open(path)
+
+        if self.transform:
+            im = self.transform(im)
+
+        return im, name
+
+    def __len__(self):
+        return len(self.shape_classes.keys())
+
+    def getitem(self, triplet, s_dir='stimuli-shape/texture-silhouettes/'):
+        """For a given (anchor, shape match, texture match) triplet, loads and returns
+        all 3 images. Not to be confused with __getitem__.
+
+        :param triplet: a length-3 list containing the name of an anchor, shape match,
+            and texture match.
+        :param s_dir: location of silhouette stimuli
+
+        :return: the anchor, shape match, and texture match images with transforms applied."""
+
+        anchor_path = s_dir + self.shape_classes[triplet[0]]['shape'] + '/' + triplet[0]
+        shape_path = s_dir + self.shape_classes[triplet[1]]['shape'] + '/' + triplet[1]
+        texture_path = s_dir + self.shape_classes[triplet[2]]['shape'] + '/' + triplet[2]
+
+        # Load images
+        anchor_im = Image.open(anchor_path)
+        shape_im = Image.open(shape_path)
+        texture_im = Image.open(texture_path)
+
+        # Apply transforms
+        if self.transform:
+            anchor_im = self.transform(anchor_im)
+            shape_im = self.transform(shape_im)
+            texture_im = self.transform(texture_im)
+
+        return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
+
+    def max_num_triplets(self):
+        """This method returns the minimum number of triplets that an anchor image
+        in the triplet dataset has. This minimum number should be treated as a
+        maximum number of triplets allowed for a given anchor to be included in
+        the results; this way, all images are equally represented as anchors. This
+        ensures that certain images are not overrepresented as anchors.
+
+        :return: a cap for the number of triplets that should be allowed for any given
+                 anchor."""
+
+        min_triplets = inf
+
+        for anchor in self.triplets_by_image.keys():
+            num_triplets = len(self.triplets_by_image[anchor]['triplets'])
+
+            if num_triplets < min_triplets:
+                min_triplets = num_triplets
+
+        return min_triplets
+
+    def select_capped_triplets(self):
+        """This method randomly selects min_triplets (see max_num_triplets) triplets for
+        each anchor image and inserts these into a dictionary indexed by anchor image.
+        This allows one to evaluate a set of triplets such that no anchor image is
+        overrepresented.
+
+        :return: a dictionary of randomly selected triplets per anchor image such that
+                 each anchor image has an equal number of triplets."""
+
+        cap = self.max_num_triplets()
+        selection = {}
+
+        for anchor in self.triplets_by_image.keys():
+            triplets = self.triplets_by_image[anchor]['triplets']
+            selection[anchor] = sample(triplets, cap)
+
+        return selection

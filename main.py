@@ -4,8 +4,6 @@ import torch.nn as nn
 from torchvision import models, transforms
 from torch.utils.data import DataLoader
 import argparse
-import probabilities_to_decision
-import helper.human_categories as sc
 import math
 import random
 from scipy import spatial
@@ -15,7 +13,7 @@ import numpy as np
 import pandas as pd
 import glob
 from PIL import Image
-from data import GeirhosStyleTransferDataset, GeirhosTriplets, CartoonStimTrials
+from data import GeirhosStyleTransferDataset, GeirhosTriplets, CartoonStimTrials, SilhouetteTriplets
 from plot import plot_similarity_histograms, plot_norm_histogram, plot_similarity_bar
 from evaluate import calculate_similarity_totals, shape_bias_rankings
 import clip
@@ -44,7 +42,7 @@ def get_penultimate_layer(model, image):
     return activations
 
 
-def get_embeddings(dir, penult_model, model_type, transform, t, g):
+def get_embeddings(dir, penult_model, model_type, transform, t, g, s):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
@@ -56,6 +54,7 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
                       data stats)
     :param t: true if running triplet simulations
     :param g: true if using grayscale Geirhos dataset
+    :param s: true if using silhouette version of Geirhos style transfer
 
     :return: a dictionary indexed by image name that contains the embeddings for
         all images in a dataset extracted from the penultimate layer of a given
@@ -75,6 +74,9 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g):
         dataset = GeirhosStyleTransferDataset(dir, '', transform)
         if g:
             embedding_dir = 'embeddings/' + model_type + '_gray.json'
+        elif s:
+            dataset = SilhouetteTriplets(transform)
+            embedding_dir = 'embeddings/' + model_type + '_silhouette.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
@@ -118,11 +120,12 @@ def generate_fake_triplets(model_type, model, shape_dir, transform, t, g, c, n=2
      :param c: true if using artificial/cartoon dataset
      :param n: number of triplets to generate"""
 
+    s = False
     # Retrieve embedding magnitude statistics from the real model
     try:
         embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
     except FileNotFoundError:
-        embeddings = get_embeddings(shape_dir, model, model_type, transform, t, g)
+        embeddings = get_embeddings(shape_dir, model, model_type, transform, t, g, s)
 
     avg = 0
     num_embeddings = 0
@@ -209,10 +212,10 @@ def generate_fake_triplets(model_type, model, shape_dir, transform, t, g, c, n=2
             results.at[t, 'Texture Cos Closer'] = 1
 
     results.to_csv('results/' + model_type +'/similarity/fake/fake.csv')
-    calculate_similarity_totals(model_type, c)
+    calculate_similarity_totals(model_type, c, s)
 
 
-def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
+def triplets(model_type, transform, embeddings, verbose, g, s, shape_dir):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
@@ -230,6 +233,7 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
     :param embeddings: a dictionary of embeddings for each image for the given model
     :param verbose: true if results should be printed to the terminal.
     :param g: true if a grayscale version of the Geirhos dataset should be used.
+    :param s: true if the silhouette version of the Geirhos dataset should be used.
     :param shape_dir: directory for the Geirhos dataset.
 
     :return: a dictionary containing a dataframe of results and a path for a CSV file for
@@ -250,7 +254,10 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
 
     # Set same_instance=False if you want matches to exclude same instances.
     same_instance = True
-    t = GeirhosTriplets(transform, same_instance=same_instance)  # Default transforms.
+    if s:
+        t = SilhouetteTriplets(transform)
+    else:
+        t = GeirhosTriplets(transform, same_instance=same_instance)  # Default transforms.
 
     images = t.shape_classes.keys()
     all_triplets = t.triplets_by_image
@@ -329,6 +336,8 @@ def triplets(model_type, transform, embeddings, verbose, g, shape_dir):
 
         if g:
             results[anchor] = [df, 'results/' + model_type + '/grayscale/' + anchor[:-4] + '.csv']
+        elif s:
+            results[anchor] = [df, 'results/' + model_type + '/silhouette/' + anchor[:-4] + '.csv']
         elif not same_instance:
             try:
                 os.mkdir('results/' + model_type + '/diff_instance')
@@ -573,6 +582,8 @@ def run_simulations(args, model_type):
     If c flag: runs quadruplet simulations using Brenden Lake's artificial stimulus dataset
                (see documentation for the cartoon_stimuli function).
     If g flag: runs simulations using a grayscale version of the Geirhos dataset.
+    If s flag: runs simulations using versions of the Geirhos style transfer dataset with
+               white backgrounds.
 
     By default, the model is the SAYCAM-trained resnext model. This can be changed when running
     this program in the terminal by using -m 'model_type' or the --all flag, which will run
@@ -582,15 +593,17 @@ def run_simulations(args, model_type):
     :param model_type: the type of model, saycam by default. Try -m 'resnet50' to change,
         for example."""
 
-    shape_categories = sc.get_human_object_recognition_categories()  # list of 16 classes in the Geirhos style-transfer dataset
     plot = args.plot
     verbose = args.verbose
     t = args.triplets
     c = args.cartoon
     g = args.grayscale
+    s = args.silhouettes
 
     if g:
         shape_dir = 'stimuli-shape/style-transfer-gray'
+    elif s:
+        shape_dir = 'stimuli-shape/texture-silhouettes'
     else:
         shape_dir = 'stimuli-shape/style-transfer'
 
@@ -619,7 +632,17 @@ def run_simulations(args, model_type):
             try:
                 embeddings = json.load(open('embeddings/' + model_type + '_gray.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s)
+        elif s:
+            try:
+                os.mkdir('results/' + model_type + '/silhouette')
+            except FileExistsError:
+                pass
+
+            try:
+                embeddings = json.load(open('embeddings/' + model_type + '_silhouette.json'))
+            except FileNotFoundError:
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s)
         else:
             try:
                 os.mkdir('results/' + model_type + '/similarity')
@@ -629,9 +652,9 @@ def run_simulations(args, model_type):
             try:
                 embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s)
 
-        results = triplets(model_type, transform, embeddings, verbose, g, shape_dir)
+        results = triplets(model_type, transform, embeddings, verbose, g, s, shape_dir)
 
         # Convert result DataFrames to CSV files
         for anchor in results.keys():
@@ -642,8 +665,8 @@ def run_simulations(args, model_type):
             df.to_csv(path, index=False)
 
         if plot:
-            plot_similarity_histograms(model_type, g)
-            plot_norm_histogram(model_type, c, g)
+            plot_similarity_histograms(model_type, g, s)
+            plot_norm_histogram(model_type, c, g, s)
 
     elif c:
         try:
@@ -659,7 +682,7 @@ def run_simulations(args, model_type):
         try:
             embeddings = json.load(open('embeddings/' + model_type + '_cartoon.json'))
         except FileNotFoundError:
-            embeddings = get_embeddings('', model, model_type, transform, t, g)
+            embeddings = get_embeddings('', model, model_type, transform, t, g, s)
 
         results = cartoon_stimuli(model_type, transform, embeddings, verbose)
 
@@ -747,6 +770,8 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--plot', help='Plots results.', required=False, action='store_true')
     parser.add_argument('-t', '--triplets', help='Obtains similarities for triplets of images.',
                         required=False, action='store_true')
+    parser.add_argument('-s', '--silhouettes', help='Obtains similarities for triplets of silhouette images.',
+                        required=False, action='store_true')
     parser.add_argument('-c', '--cartoon', help='Obtains similarities for cartoon, novel stimuli.',
                         required=False, action='store_true')
     parser.add_argument('-g', '--grayscale', help='Runs simulations with a grayscale version of the Geirhos dataset.',
@@ -758,6 +783,7 @@ if __name__ == '__main__':
     plot = args.plot
     t = args.triplets
     c = args.cartoon
+    s = args.silhouettes
 
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
                   'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
@@ -777,19 +803,21 @@ if __name__ == '__main__':
         if not plot:
             for model_type in model_list:
                 print("Running simulations for {0}".format(model_type))
-                #run_simulations(args, model_type)
-                #calculate_similarity_totals(model_type, c)
+                run_simulations(args, model_type)
+                calculate_similarity_totals(model_type, c, s)
 
             print("\nCalculating ranks...")
             if t:
                 shape_bias_rankings('similarity')
+            elif s:
+                shape_bias_rankings('silhouette')
             elif c:
                 shape_bias_rankings('cartoon')
 
         else:
             g = args.grayscale
-            plot_similarity_bar(g, c)
+            plot_similarity_bar(g, c, s)
 
     else:
         run_simulations(args, args.model)
-        calculate_similarity_totals(args.model, c)
+        calculate_similarity_totals(args.model, c, s)

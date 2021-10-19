@@ -70,7 +70,7 @@ def plot_class_values(categories, class_values, im, shape, texture, model_type):
     plt.savefig('figures/' + model_type + '/' + im)
 
 
-def plot_similarity_histograms(model_type, g):
+def plot_similarity_histograms(model_type, g, s):
     """First plots 6 regular histograms: one set of 2 for cosine similarity between anchor
     images and shape/texture matches, one set of 2 for dot product between anchor images
     and shape/texture matches, and one set of 2 for Euclidean distance between anchor images
@@ -81,6 +81,7 @@ def plot_similarity_histograms(model_type, g):
 
     :param model_type: saycam, resnet50, etc.
     :param g: true if using the grayscale Geirhos dataset
+    :param s: true if using silhouette variant of Geirhos dataset
     """
 
     # NOTE: THIS CODE NEEDS TO BE MADE COMPATIBLE WITH THE NEW CSV FORMAT. DO NOT RUN YET
@@ -88,6 +89,8 @@ def plot_similarity_histograms(model_type, g):
     # Create directory
     if g:
         plot_dir = 'figures/' + model_type + '/grayscale'
+    elif s:
+        plot_dir = 'figures/' + model_type + '/silhouette'
     else:
         plot_dir = 'figures/' + model_type + '/similarity'
     try:
@@ -98,6 +101,8 @@ def plot_similarity_histograms(model_type, g):
 
     # Collect data
     sim_dir = 'results/' + model_type + '/similarity/'
+    if s:
+        sim_dir = 'results/' + model_type + '/silhouette/'
 
     shape_dot = []
     shape_cos = []
@@ -179,12 +184,14 @@ def plot_similarity_histograms(model_type, g):
     plt.savefig(plot_dir + 'difference.png')
 
 
-def plot_norm_histogram(model_type, c, g):
+def plot_norm_histogram(model_type, c, g, s):
     """Plots a histogram of embedding norms for a given model.
 
     :param model_type: resnet40, saycam, etc.
     :param c: True if using the artificial/cartoon stimuli dataset.
-    :param g: True if using the grayscale Geirhos dataset."""
+    :param g: True if using the grayscale Geirhos dataset.
+    :param s: True if using silhouette variant of style transfer dataset.
+    """
 
     # Create directory
     plot_dir = 'figures/' + model_type + '/embeddings'
@@ -212,6 +219,9 @@ def plot_norm_histogram(model_type, c, g):
     elif g:
         embedding_dir = 'embeddings/' + model_type + '_gray.json'
         fig_dir = plot_dir + model_type + '_gray.png'
+    elif s:
+        embedding_dir = 'embeddings/' + model_type + '_silhouette.json'
+        fig_dir = plot_dir + model_type + '_silhouette.png'
     else:
         embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
         fig_dir = plot_dir + model_type + '.png'
@@ -237,12 +247,14 @@ def plot_norm_histogram(model_type, c, g):
     plt.savefig(fig_dir)
 
 
-def plot_similarity_bar(g, c):
+def plot_similarity_bar(g, c, s):
     """Plots a stacked bar plot of proportion shape/texture/(color) match according to
     similarity across models.
 
     :param g: True if using the grayscale Geirhos dataset.
-    :param c: True if using the artificial/cartoon stimuli dataset."""
+    :param c: True if using the artificial/cartoon stimuli dataset.
+    :param s: True if using the silhouette variant of the style transfer dataset.
+    """
 
     model_types = ['dino_resnet50', 'mocov2', 'swav', 'clipRN50', 'clipRN50x4', 'clipRN50x16',
                    'clipViTB32', 'clipViTB16', 'alexnet', 'vgg16', 'resnet50', 'saycam', 'saycamA',
@@ -256,6 +268,9 @@ def plot_similarity_bar(g, c):
         d = 3
     elif g:
         sub = 'grayscale'
+        d = 2
+    elif s:
+        sub = 'silhouette'
         d = 2
     else:
         sub = 'similarity'

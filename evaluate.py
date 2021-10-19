@@ -1,7 +1,7 @@
 import pandas as pd
 import glob
 import os
-from data import GeirhosTriplets, CartoonStimTrials
+from data import GeirhosTriplets, CartoonStimTrials, SilhouetteTriplets
 
 
 def csv_class_values(shape_dict, shape_categories, shape_spec_dict, csv_dir):
@@ -184,18 +184,23 @@ def calculate_proportions(result_dir, verbose=False):
     file.close()
 
 
-def calculate_similarity_totals(model_type, c):
+def calculate_similarity_totals(model_type, c, s):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/
     Euclidean distance is closer for a given model. Stores proportions as a csv.
 
     :param model_type: saycam, resnet50, etc.
-    :param c: true if the artificial/cartoon stimulus dataset is being used."""
+    :param c: true if the artificial/cartoon stimulus dataset is being used.
+    :param s: true if silhouette variant of style transfer dataset is being used.
+    """
 
     num_draws = 3
 
     if c:
         sim_dir = 'results/' + model_type + '/cartoon/'
         dataset = CartoonStimTrials(None)
+    elif s:
+        sim_dir = 'results/' + model_type + '/silhouette/'
+        dataset = SilhouetteTriplets(None)
     else:
         sim_dir = 'results/' + model_type +'/similarity/'
         dataset = GeirhosTriplets(None)
@@ -287,9 +292,6 @@ def shape_bias_rankings(simulation):
         biases.append('Color Match Closer')
         color_bias_rank = ['/']
         bias_titles['Color Match Closer'] = 'Color Bias'
-
-    shape_bias_rank = ['/']  # Models before the / are actually shape biased. Models after are not.
-    texture_bias_rank = ['/']
 
     metrics = ['cos', 'dot', 'ed']
     metric_titles = {'cos': 'Cosine Similarity', 'dot': 'Dot Product', 'ed': 'Euclidean Distance'}
