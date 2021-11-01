@@ -247,13 +247,14 @@ def plot_norm_histogram(model_type, c, g, s):
     plt.savefig(fig_dir)
 
 
-def plot_similarity_bar(g, c, s):
+def plot_similarity_bar(g, c, s, alpha):
     """Plots a stacked bar plot of proportion shape/texture/(color) match according to
     similarity across models.
 
     :param g: True if using the grayscale Geirhos dataset.
     :param c: True if using the artificial/cartoon stimuli dataset.
     :param s: True if using the silhouette variant of the style transfer dataset.
+    :param alpha: controls transparency for silhouette simulations.
     """
 
     model_types = ['dino_resnet50', 'mocov2', 'swav', 'clipRN50', 'clipRN50x4', 'clipRN50x16',
@@ -270,7 +271,7 @@ def plot_similarity_bar(g, c, s):
         sub = 'grayscale'
         d = 2
     elif s:
-        sub = 'silhouette'
+        sub = 'silhouette_' + str(alpha)
         d = 2
     else:
         sub = 'similarity'

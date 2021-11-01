@@ -184,13 +184,14 @@ def calculate_proportions(result_dir, verbose=False):
     file.close()
 
 
-def calculate_similarity_totals(model_type, c, s):
+def calculate_similarity_totals(model_type, c, s, alpha):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/
     Euclidean distance is closer for a given model. Stores proportions as a csv.
 
     :param model_type: saycam, resnet50, etc.
     :param c: true if the artificial/cartoon stimulus dataset is being used.
     :param s: true if silhouette variant of style transfer dataset is being used.
+    :param alpha: controls transparency for Silhouette triplets
     """
 
     num_draws = 3
@@ -199,8 +200,9 @@ def calculate_similarity_totals(model_type, c, s):
         sim_dir = 'results/' + model_type + '/cartoon/'
         dataset = CartoonStimTrials(None)
     elif s:
-        sim_dir = 'results/' + model_type + '/silhouette/'
-        dataset = SilhouetteTriplets(None)
+        dataset = SilhouetteTriplets(None, alpha)
+        alpha_str = dataset.get_alpha_str()
+        sim_dir = 'results/' + model_type + '/silhouette_' + alpha_str + '/'
     else:
         sim_dir = 'results/' + model_type +'/similarity/'
         dataset = GeirhosTriplets(None)
@@ -278,12 +280,13 @@ def calculate_similarity_totals(model_type, c, s):
     results.to_csv(sim_dir + 'proportions_avg.csv', index=False)
 
 
-def shape_bias_rankings(simulation):
+def shape_bias_rankings(simulation, alpha=1):
     """This function ranks the models in order of highest shape and texture (and color)
     bias. Stores the rankings in text files inside the results folder.
 
     :param simulation: the type of simulation to calculate ranks from. eg. similarity
-                       for Geirhos triplets and cartoon for cartoon dataset quadruplets."""
+                       for Geirhos triplets and cartoon for cartoon dataset quadruplets.
+    :param alpha: controls transparency for silhouette simulations."""
 
     biases = ['Shape Match Closer', 'Texture Match Closer']
     bias_titles = {'Shape Match Closer': 'Shape Bias', 'Texture Match Closer': 'Texture Bias'}
@@ -292,6 +295,8 @@ def shape_bias_rankings(simulation):
         biases.append('Color Match Closer')
         color_bias_rank = ['/']
         bias_titles['Color Match Closer'] = 'Color Bias'
+    elif simulation == 'silhouette':
+        simulation = simulation + '_' + str(alpha)
 
     metrics = ['cos', 'dot', 'ed']
     metric_titles = {'cos': 'Cosine Similarity', 'dot': 'Dot Product', 'ed': 'Euclidean Distance'}

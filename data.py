@@ -518,13 +518,15 @@ class SilhouetteTriplets:
     filled with the texture of another. This is an attempt to make texture less
     salient and devise a more accurate measure of shape bias."""
 
-    def __init__(self, transform, shape_dir='stimuli-shape/style-transfer'):
+    def __init__(self, transform, alpha, shape_dir='stimuli-shape/style-transfer'):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
 
         :param transform: a set of image transformations
         :param shape_dir: directory for the Geirhos dataset.
+        :param alpha: controls transparency of masks. 1 = fully opaque masks. 0 = original
+                      Geirhos stimuli.
         :param s_dir: the directory where the shape silhouettes are located.
         """
 
@@ -532,6 +534,8 @@ class SilhouetteTriplets:
         self.all_triplets = []
         self.triplets_by_image = {}
         self.transform = transform
+        self.alpha = int(alpha * 255)
+        self.alpha_str = str(alpha)
 
         # Create/load dictionaries containing shape and texture classifications for each image
         try:
@@ -608,13 +612,20 @@ class SilhouetteTriplets:
             with open(triplet_dir, 'w') as file:
                 json.dump(self.triplets_by_image, file)
         
-        self.create_silhouette_stimuli()
+        self.create_silhouette_stimuli(alpha=self.alpha)
 
-    def create_silhouette_stimuli(self, s_dir='stimuli-shape/filled-silhouettes'):
-        """Create and save the silhouette stimuli if they do not already exist."""
+    def create_silhouette_stimuli(self, alpha, s_dir='stimuli-shape/filled-silhouettes'):
+        """Create and save the silhouette stimuli if they do not already exist.
+
+        :param alpha: controls the transparency of the masks. alpha = 0 generates the
+                      original Geirhos dataset. alpha = 1 generates a dataset with fully
+                      opaque masks. Any alpha in (0, 1) will mask the background texture to
+                      varying degrees (with white pixels)."""
+
+        alpha_dir = '-' + str(alpha / 255)
 
         try:
-            os.mkdir('stimuli-shape/texture-silhouettes')
+            os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir)
         except FileExistsError:
             return
 
@@ -624,7 +635,7 @@ class SilhouetteTriplets:
                         self.shape_classes[im_name]['shape_spec'] + '.png'
 
             try:
-                os.mkdir('stimuli-shape/texture-silhouettes/' +
+                os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir + '/' +
                          self.shape_classes[im_name]['shape'])
             except FileExistsError:
                 pass
@@ -638,13 +649,13 @@ class SilhouetteTriplets:
                 if item[0] == 0 and item[1] == 0 and item[2] == 0:
                     new_data.append(item)
                 else:
-                    new_data.append((0, 0, 0, 0))
+                    new_data.append((0, 0, 0, 255 - alpha))
 
             mask.putdata(new_data)
 
             base = Image.new('RGB', mask.size, (255, 255, 255))
             base.paste(im, mask=mask.split()[3])
-            base.save('stimuli-shape/texture-silhouettes/' +
+            base.save('stimuli-shape/texture-silhouettes' + alpha_dir + '/' +
                          self.shape_classes[im_name]['shape'] + '/' + im_name)
 
     def __getitem__(self, idx):
@@ -654,7 +665,8 @@ class SilhouetteTriplets:
         :return: the image with transforms applied and the image name."""
 
         name = list(self.shape_classes.keys())[idx]
-        path = 'stimuli-shape/texture-silhouettes/' + self.shape_classes[name]['shape'] + '/' + name
+        path = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/' + self.shape_classes[name]['shape'] \
+               + '/' + name
         im = Image.open(path)
 
         if self.transform:
@@ -665,15 +677,16 @@ class SilhouetteTriplets:
     def __len__(self):
         return len(self.shape_classes.keys())
 
-    def getitem(self, triplet, s_dir='stimuli-shape/texture-silhouettes/'):
+    def getitem(self, triplet):
         """For a given (anchor, shape match, texture match) triplet, loads and returns
         all 3 images. Not to be confused with __getitem__.
 
         :param triplet: a length-3 list containing the name of an anchor, shape match,
             and texture match.
-        :param s_dir: location of silhouette stimuli
 
         :return: the anchor, shape match, and texture match images with transforms applied."""
+
+        s_dir = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/'
 
         anchor_path = s_dir + self.shape_classes[triplet[0]]['shape'] + '/' + triplet[0]
         shape_path = s_dir + self.shape_classes[triplet[1]]['shape'] + '/' + triplet[1]
@@ -729,3 +742,6 @@ class SilhouetteTriplets:
             selection[anchor] = sample(triplets, cap)
 
         return selection
+
+    def get_alpha_str(self):
+        return self.alpha_str
