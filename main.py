@@ -14,11 +14,39 @@ import copy
 from PIL import Image
 from data import GeirhosStyleTransferDataset, GeirhosTriplets, CartoonStimTrials, SilhouetteTriplets
 from plot import plot_similarity_histograms, plot_norm_histogram, plot_similarity_bar
-from evaluate import calculate_similarity_totals, shape_bias_rankings, csv_class_values, calculate_totals, calculate_proportions
+from evaluate import calculate_similarity_totals, shape_bias_rankings, csv_class_values, calculate_totals, calculate_proportions, get_num_draws
 import clip
 import helper.human_categories as hc
 import probabilities_to_decision
+from random import sample
 logging.set_verbosity_error()  # Suppress warnings from Hugging Face
+
+
+def new_seed():
+    """ This function generates num_draws (see evaluate.py) random selections
+    of triplets and stores them. The purpose of this is to ensure that all
+    models are seeing the same random draw of triplets until this function
+    is called again. Shape/texture similarity proportions for all models are
+    calculated as the averages of shape/texture similarity proportions of a
+    number of random draws of triplets."""
+
+    num_draws = get_num_draws()
+    selections = {i: None for i in range(num_draws)}
+
+    d = GeirhosTriplets(None)
+    cap = d.max_num_triplets()
+
+    for i in range(num_draws):
+        selection = {}
+
+        for anchor in d.triplets_by_image.keys():
+            triplets = d.triplets_by_image[anchor]['triplets']
+            selection[anchor] = sample(triplets, cap)
+
+        selections[i] = selection
+
+    with open('seed.json', 'w') as file:
+        json.dump(selections, file)
 
 
 def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
@@ -725,7 +753,11 @@ if __name__ == '__main__':
                         required=False, action='store_true')
     parser.add_argument('-g', '--grayscale', help='Runs simulations with a grayscale version of the Geirhos dataset.',
                         required=False, action='store_true')
-    parser.add_argument('--all', help='Generates plots, summaries, or results for all models.', required=False, action='store_true')
+    parser.add_argument('--all', help='Generates plots, summaries, or results for all models.', required=False,
+                        action='store_true')
+    parser.add_argument('--new_seed', help='Generates a new collection of randomly selected triplets to use in the '
+                                           'calculation of similarity shape/texture bias proportions.', required=False,
+                        action='store_true')
     args = parser.parse_args()
 
     a = args.all
@@ -748,6 +780,9 @@ if __name__ == '__main__':
         os.mkdir('figures')
     except FileExistsError:
         pass
+
+    if new_seed or not os.path.exists('seed.json'):
+        new_seed()
 
     if a:
         if not plot:

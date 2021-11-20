@@ -3,6 +3,23 @@ import glob
 import os
 from data import GeirhosTriplets, CartoonStimTrials, SilhouetteTriplets
 
+# This defines the number of times triplets are randomly selected in the
+# calculation of proportions. In other words, when num_draws = n, the
+# shape bias proportion calculated for a given model is the average of
+# calculated shape bias for n random draws of triplets. Note that these
+# random draws are the same across models; the specific triplets to be
+# selected are randomly chosen by the new_seed function in main.py and
+# are stored. This ensures that all models see the same draws of random
+# triplets. New random draws can be generated with the --new_seed flag.
+num_draws = 3
+
+
+def get_num_draws():
+    """Returns the global variable num_draws; this function is used by the
+    new_seed function in main.py, which generates num_draws random draws
+    of triplets to be accessed by all models until a new seed is generated."""
+    return num_draws
+
 
 def csv_class_values(shape_dict, shape_categories, shape_spec_dict, csv_dir):
     """Writes the shape category, texture category, and model decision for all
@@ -211,8 +228,6 @@ def calculate_similarity_totals(model_type, c, s, alpha):
     :param alpha: controls transparency for Silhouette triplets
     """
 
-    num_draws = 3
-
     if c:
         sim_dir = 'results/' + model_type + '/cartoon/'
         dataset = CartoonStimTrials(None)
@@ -238,13 +253,16 @@ def calculate_similarity_totals(model_type, c, s, alpha):
     results.at[:, 'Model'] = model_type
 
     for random_draw in range(num_draws):
-        selected_triplets = dataset.select_capped_triplets()
+        selected_triplets = dataset.select_capped_triplets(random_draw)
         num_rows = 0
         results_by_metric = {key: [0, 0, 0] for key in metrics}
 
         for file in glob.glob(sim_dir + '*.csv'):
             if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv'\
-                    or file == sim_dir + 'matrix.csv' or file == sim_dir + 'proportions_avg.csv':
+                    or file == sim_dir + 'matrix.csv' or file == sim_dir + 'proportions_avg.csv'\
+                    or file == sim_dir + 'proportions_OLD.csv':
+                if file == sim_dir + 'proportions_avg.csv':
+                    os.rename(file, sim_dir + 'proportions_OLD.csv')
                 continue
 
             df = pd.read_csv(file)

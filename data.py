@@ -8,7 +8,7 @@ import glob
 import warnings
 import cv2
 from math import inf
-from random import sample, shuffle
+from random import sample
 import transformers
 warnings.filterwarnings("ignore")
 
@@ -255,6 +255,8 @@ class GeirhosTriplets:
                     shape_match = shape_match.split('/')[-1]
                     if shape_match == image or shape_match not in self.shape_classes.keys():
                         continue
+                    elif self.shape_classes[shape_match]['texture'] == texture:
+                        continue  # Filters shape matches with same texture class
                     if not same_instance:
                         if shape_spec1 == self.shape_classes[shape_match]['shape_spec']:
                             continue
@@ -266,6 +268,8 @@ class GeirhosTriplets:
                     texture_match = texture_match.split('/')[-1]
                     if texture_match == image or texture_match not in self.shape_classes.keys():
                         continue
+                    elif self.shape_classes[texture_match]['shape'] == shape:
+                        continue  # Filter out texture matches with same shape class
                     if not same_instance:
                         if texture_spec1 == self.shape_classes[texture_match]['texture_spec']:
                             continue
@@ -340,23 +344,20 @@ class GeirhosTriplets:
 
         return min_triplets
 
-    def select_capped_triplets(self):
+    def select_capped_triplets(self, draw):
         """This method randomly selects min_triplets (see max_num_triplets) triplets for
         each anchor image and inserts these into a dictionary indexed by anchor image.
         This allows one to evaluate a set of triplets such that no anchor image is
         overrepresented.
 
+        :param draw: the random draw to choose from the seed.json file (ensures all
+                     models view the same random selection)
+
         :return: a dictionary of randomly selected triplets per anchor image such that
                  each anchor image has an equal number of triplets."""
 
-        cap = self.max_num_triplets()
-        selection = {}
-
-        for anchor in self.triplets_by_image.keys():
-            triplets = self.triplets_by_image[anchor]['triplets']
-            selection[anchor] = sample(triplets, cap)
-
-        return selection
+        selections = json.load(open('seed.json'))
+        return selections[str(draw)]
 
 
 class CartoonStimTrials(Dataset):
@@ -519,7 +520,7 @@ class CartoonStimTrials(Dataset):
 
         return im, name
 
-    def select_capped_triplets(self):
+    def select_capped_triplets(self, draw):
         """Currently just returns all quadruplets."""
         return self.all_trials
 
@@ -610,6 +611,8 @@ class SilhouetteTriplets:
                     shape_match = shape_match.split('/')[-1]
                     if shape_match == image or shape_match not in self.shape_classes.keys():
                         continue
+                    elif self.shape_classes[shape_match]['texture'] == texture:
+                        continue  # Filters shape matches with same texture class
                     self.triplets_by_image[image]['shape matches'].append(shape_match)
 
                 for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '*.png'):
@@ -618,6 +621,8 @@ class SilhouetteTriplets:
                     texture_match = texture_match.split('/')[-1]
                     if texture_match == image or texture_match not in self.shape_classes.keys():
                         continue
+                    elif self.shape_classes[texture_match]['shape'] == shape:
+                        continue  # Filter out texture matches with same shape class
                     self.triplets_by_image[image]['texture matches'].append(texture_match)
 
                 for shape_match in self.triplets_by_image[image]['shape matches']:
@@ -749,23 +754,20 @@ class SilhouetteTriplets:
 
         return min_triplets
 
-    def select_capped_triplets(self):
+    def select_capped_triplets(self, draw):
         """This method randomly selects min_triplets (see max_num_triplets) triplets for
         each anchor image and inserts these into a dictionary indexed by anchor image.
         This allows one to evaluate a set of triplets such that no anchor image is
         overrepresented.
 
+        :param draw: the random draw to choose from the seed.json file (ensures all
+                     models view the same random selection)
+
         :return: a dictionary of randomly selected triplets per anchor image such that
                  each anchor image has an equal number of triplets."""
 
-        cap = self.max_num_triplets()
-        selection = {}
-
-        for anchor in self.triplets_by_image.keys():
-            triplets = self.triplets_by_image[anchor]['triplets']
-            selection[anchor] = sample(triplets, cap)
-
-        return selection
+        selections = json.load(open('seed.json'))
+        return selections[str(draw)]
 
     def get_alpha_str(self):
         return self.alpha_str
