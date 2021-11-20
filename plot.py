@@ -488,8 +488,8 @@ def plot_bias_charts():
             model_dict[model][alpha] = shape_bias
 
     alphas = list(model_dict['saycam'].keys())
-    '''
-    alphas = list(model_dict['saycam'].keys())
+
+    # SAYCAM models
     plt.style.use('ggplot')
     plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
     for model in saycam:
@@ -501,10 +501,39 @@ def plot_bias_charts():
     plt.axis((x1, x2, 0, 1))
     plt.legend()
     plt.tight_layout()
-    plt.savefig('saycam.png')
-    '''
+    plt.savefig('saycam_alpha_plot.png')
+    plt.clf()
 
+    # Supervised models
     plt.style.use('ggplot')
+    plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
+    for model in supervised:
+        plt.plot(alphas, list(model_dict[model].values()), label=model, marker='o')
+    plt.title("Supervised Models: Shape Bias vs. Alpha")
+    plt.xlabel('Alpha (background texture transparency)')
+    plt.ylabel('Proportion of Triplets with Closer Shape Match')
+    x1, x2, y1, y2 = plt.axis()
+    plt.axis((x1, x2, 0, 1))
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('supervised_alpha_plot.png')
+    plt.clf()
+
+    # Self-supervised models
+    plt.style.use('ggplot')
+    plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
+    for model in self_supervised:
+        plt.plot(alphas, list(model_dict[model].values()), label=model, marker='o')
+    plt.title("Self-Supervised Models: Shape Bias vs. Alpha")
+    plt.xlabel('Alpha (background texture transparency)')
+    plt.ylabel('Proportion of Triplets with Closer Shape Match')
+    x1, x2, y1, y2 = plt.axis()
+    plt.axis((x1, x2, 0, 1))
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('self_supervised_alpha_plot.png')
+    plt.clf()
+
     plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
     for model in clip_models:
         plt.plot(alphas, list(model_dict[model].values()), label=model, marker='o')
@@ -515,7 +544,8 @@ def plot_bias_charts():
     plt.axis((x1, x2, 0, 1))
     plt.legend()
     plt.tight_layout()
-    plt.savefig('clip.png')
+    plt.savefig('clip_alpha_plot.png')
+
 
 if __name__ == "__main__":
     plot_bias_charts()
