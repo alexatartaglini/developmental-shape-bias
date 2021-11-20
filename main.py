@@ -2,44 +2,23 @@ import sys
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
+from transformers import ViTFeatureExtractor, ViTForImageClassification, ViTModel, logging
 from torch.utils.data import DataLoader
 import argparse
-import math
-import random
-from scipy import spatial
 import os
 import json
 import numpy as np
 import pandas as pd
 import glob
+import copy
 from PIL import Image
 from data import GeirhosStyleTransferDataset, GeirhosTriplets, CartoonStimTrials, SilhouetteTriplets
 from plot import plot_similarity_histograms, plot_norm_histogram, plot_similarity_bar
-from evaluate import calculate_similarity_totals, shape_bias_rankings
+from evaluate import calculate_similarity_totals, shape_bias_rankings, csv_class_values, calculate_totals, calculate_proportions
 import clip
-
-
-def get_penultimate_layer(model, image):
-    """Extracts the activations of the penultimate layer for a given input
-    image.
-
-    :param model: the model to extract activations from
-    :param image: the image to be passed through the model
-    :return: the activation of the penultimate layer"""
-
-    layer = model._modules.get('avgpool')
-    activations = torch.zeros(2048)
-
-    def copy_data(m, i, o):
-        activations.copy_(o.data)
-
-    h = layer.register_forward_hook(copy_data)
-
-    model(image)
-
-    h.remove()
-
-    return activations
+import helper.human_categories as hc
+import probabilities_to_decision
+logging.set_verbosity_error()  # Suppress warnings from Hugging Face
 
 
 def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
@@ -98,6 +77,10 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
                     or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
                 embedding = penult_model.encode_image(im)
                 embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
+            elif model_type == 'ViTB16':
+                im['pixel_values'] = im['pixel_values'].squeeze(0)
+                outputs = penult_model(**im)
+                embedding = outputs.last_hidden_state.squeeze(0)[0, :]
             else:
                 embedding = penult_model(im).numpy().squeeze()
 
@@ -107,114 +90,6 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
         json.dump(embedding_dict, file)
 
     return embedding_dict
-
-
-def generate_fake_triplets(model_type, model, shape_dir, transform, t, g, c, n=230431):
-    """Generates fake embeddings that have the same dimensionality as
-     model_type for n triplets, then calculates cosine similarity & dot product
-     statistics.
-
-     :param model_type: resnet50, saycam, etc.
-     :param n: number of fake triplets to generate. Default is the number of
-               triplets the real models see.
-     :param t: true if doing triplet simulations
-     :param g: true if using grayscale Geirhos dataset
-     :param c: true if using artificial/cartoon dataset
-     :param n: number of triplets to generate"""
-
-    s = False
-    # Retrieve embedding magnitude statistics from the real model
-    try:
-        embeddings = json.load(open('embeddings/' + model_type + '_embeddings.json'))
-    except FileNotFoundError:
-        embeddings = get_embeddings(shape_dir, model, model_type, transform, t, g, s, alpha)
-
-    avg = 0
-    num_embeddings = 0
-    min_e = math.inf
-    max_e = 0
-
-    size = len(list(embeddings.values())[0])
-
-    for embedding in embeddings.values():
-        num_embeddings += 1
-        mag = np.linalg.norm(embedding)
-        avg += mag
-        if mag > max_e:
-            max_e = mag
-        if mag < min_e:
-            min_e = mag
-
-    avg = avg / num_embeddings
-
-    columns = ['Model', 'Anchor', 'Shape Match', 'Texture Match',
-               'Shape Dot', 'Shape Cos', 'Texture Dot', 'Texture Cos'
-               'Shape Dot Closer', 'Shape Cos Closer', 'Texture Dot Closer', 'Texture Cos Closer']
-    results = pd.DataFrame(index=range(n), columns=columns)
-
-    try:
-        os.mkdir('results/' + model_type +'/similarity/fake')
-    except FileExistsError:
-        pass
-
-    # Iterate over n fake triplets
-    for t in range(n):
-        anchor = []
-        shape_match = []
-        texture_match = []
-
-        lists = [anchor, shape_match, texture_match]
-        new_lists = []
-
-        # Generate three random vectors
-        for l in lists:
-
-            for idx in range(size):
-                l.append(random.random())
-
-            mag = -1
-            while mag < 0:
-                mag = np.random.normal(loc=avg, scale=min(avg - min_e, max_e - avg) / 2)
-
-            l = np.array(l)
-            current_mag = np.linalg.norm(l)
-            new_l = (mag * l) / current_mag
-            new_lists.append(new_l)
-
-        anchor = new_lists[0]
-        shape_match = new_lists[1]
-        texture_match = new_lists[2]
-
-        results.at[t, 'Anchor'] = anchor
-        results.at[t, 'Shape Match'] = shape_match
-        results.at[t, 'Texture Match'] = texture_match
-
-        shape_dot = np.dot(anchor, shape_match)
-        shape_cos = spatial.distance.cosine(anchor, shape_match)
-        texture_dot = np.dot(anchor, texture_match)
-        texture_cos = spatial.distance.cosine(anchor, texture_match)
-
-        results.at[t, 'Shape Dot'] = shape_dot
-        results.at[t, 'Shape Cos'] = shape_cos
-        results.at[t, 'Texture Dot'] = texture_dot
-        results.at[t, 'Texture Cos'] = texture_cos
-
-        if shape_dot > texture_dot:
-            results.at[t, 'Shape Dot Closer'] = 1
-            results.at[t, 'Texture Dot Closer'] = 0
-        else:
-            results.at[t, 'Shape Dot Closer'] = 0
-            results.at[t, 'Texture Dot Closer'] = 1
-
-        if shape_cos > texture_cos:
-            results.at[t, 'Shape Cos Closer'] = 1
-            results.at[t, 'Texture Cos Closer'] = 0
-        else:
-            results.at[t, 'Shape Cos Closer'] = 0
-            results.at[t, 'Texture Cos Closer'] = 1
-
-    results.to_csv('results/' + model_type +'/similarity/fake/fake.csv')
-    calculate_similarity_totals(model_type, c, s, 1)
 
 
 def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir):
@@ -550,6 +425,11 @@ def initialize_model(model_type):
         model = models.vgg16(pretrained=True)
     elif model_type == 'swav':
         model = torch.hub.load('facebookresearch/swav', 'resnet50')
+    elif model_type == 'ViTB16':
+        model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224')
+        penult_model = ViTModel.from_pretrained('google/vit-base-patch16-224')
+        # Note: "transform" for the ViT model is not actually a transform
+        transform = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
     else:
         print('The model ' + model_type + ' has not yet been defined. Please see main.py')
         sys.exit()
@@ -569,11 +449,31 @@ def initialize_model(model_type):
             or model_type == 'clipRN50x4' or model_type == 'clipRN50x16' or model_type == 'clipViTB16':
         penult_model = model
     elif model_type == 'alexnet' or model_type == 'vgg16':
+        penult_model = copy.deepcopy(model)
         new_classifier = nn.Sequential(*list(model.classifier.children())[:-1])
-        model.classifier = new_classifier
-        penult_model = model
+        penult_model.classifier = new_classifier
 
     return model, penult_model, transform
+
+
+def clip_predictions(im, model, text):
+    """Gives probabilities for ImageNet classes for a CLIP model given an
+    input image.
+
+    :param im: the image to obtain probabilities for
+    :param model: the CLIP model to obtain probabilties from
+    :param text: tokenized version of list of ImageNet category strings
+
+    :return: a 1x1000 dim tensor of probabilities for ImageNet classes"""
+
+    image_features = model.encode_image(im)
+    text_features = model.encode_text(text)
+
+    image_features /= image_features.norm(dim=-1, keepdim=True)
+    text_features /= text_features.norm(dim=-1, keepdim=True)
+    similarity = (100 * image_features @ text_features.T)
+
+    return similarity
 
 
 def run_simulations(args, model_type):
@@ -605,6 +505,8 @@ def run_simulations(args, model_type):
     s = args.silhouettes
     alpha = args.alpha
 
+    clip_list = ['clipRN50', 'clipRN50x4', 'clipRN50x16', 'clipViTB32', 'clipViTB16']
+
     if g:
         shape_dir = 'stimuli-shape/style-transfer-gray'
     elif s:
@@ -614,6 +516,20 @@ def run_simulations(args, model_type):
 
     # Initialize the model and put in evaluation mode; retrieve transforms
     model, penult_model, transform = initialize_model(model_type)
+
+    '''
+    if model_type in clip_list:
+        with open('helper/categories.txt', 'r') as f:
+            categories = []
+            for s in f.readlines():
+                s = s.split(' ')[1:]
+                new_s = ''
+                for c in s:
+                    new_s += c
+                    new_s += ' '
+                categories.append(new_s.strip())
+        text = clip.tokenize(categories)
+    '''
 
     # Create directories for results and plots
     try:
@@ -700,8 +616,21 @@ def run_simulations(args, model_type):
             path = anchor_results[1]
 
             df.to_csv(path, index=False)
-    '''
-    else:  # The code below considers model decisions and not similarities; it isn't used
+
+    else:  # Run simulations in the style of Geirhos et al.; ie., obtain classifications
+        result_dir = 'results/' + model_type + '/classifications/silhouette_' + str(alpha)
+
+        try:
+            os.mkdir('results/' + model_type + '/classifications')
+        except FileExistsError:
+            pass
+        try:
+            os.mkdir(result_dir)
+        except FileExistsError:
+            pass
+
+        shape_categories = hc.get_human_object_recognition_categories()
+
         shape_dict = dict.fromkeys(shape_categories)  # for storing the results
         shape_categories0 = [shape + '0' for shape in shape_categories]
         shape_dict0 = dict.fromkeys(shape_categories0)
@@ -712,10 +641,14 @@ def run_simulations(args, model_type):
             shape_spec_dict[shape] = []
 
         # Load and process the images using my custom Geirhos style transfer dataset class
-        style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir, transform)
-        style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
-        if not os.path.isdir('stimuli-texture'):
-            style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
+        #style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir, transform)
+        #style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
+
+        silhouette_dataset = SilhouetteTriplets(transform, alpha)
+        silhouette_dataloader = DataLoader(silhouette_dataset, batch_size=1, shuffle=False)
+
+        #if not os.path.isdir('stimuli-texture'):
+            #style_transfer_dataset.create_texture_dir('stimuli-shape/style-transfer', 'stimuli-texture')
 
         # Obtain ImageNet - Geirhos mapping
         mapping = probabilities_to_decision.ImageNetProbabilitiesTo16ClassesMapping()
@@ -724,17 +657,25 @@ def run_simulations(args, model_type):
 
         with torch.no_grad():
             # Pass images into the model one at a time
-            for batch in style_transfer_dataloader:
-                im, im_dir, shape, texture, shape_spec, texture_spec = batch
+            for batch in silhouette_dataloader:
+                im, name = batch
+                split_name = name[0].split('-')
 
                 # hack to extract vars
-                im_dir = im_dir[0]
-                shape = shape[0]
-                texture = texture[0]
-                shape_spec = shape_spec[0]
-                texture_spec = texture_spec[0]
+                #im_dir = im_dir[0]
+                shape = ''.join([i for i in split_name[0] if not i.isdigit()])
+                texture = ''.join([i for i in split_name[1][:-4] if not i.isdigit()])
+                #shape_spec = split_name[0]
+                texture_spec = split_name[1][:-4]
 
-                output = model(im)
+                if model_type == 'ViTB16':
+                    output = model(**im)
+                    output = output.logits
+                #elif model_type in clip_list:
+                    #output = clip_predictions(im, model, text)
+                else:
+                    output = model(im)
+
                 soft_output = softmax(output).detach().numpy().squeeze()
 
                 decision, class_values = mapping.probabilities_to_decision(soft_output)
@@ -749,20 +690,21 @@ def run_simulations(args, model_type):
                 restricted_class_values = torch.Tensor([class_values[shape_idx], class_values[texture_idx]])
                 restricted_class_values = softmax2(restricted_class_values)
 
+                '''
                 if verbose:
                     print('Decision for ' + im_dir + ': ' + decision)
                     print('\tRestricted decision: ' + decision_restricted)
                 if plot:
                     plot_class_values(shape_categories, class_values, im_dir, shape, texture, model_type)
+                '''
 
                 shape_dict[shape][texture_spec + '0'] = [decision, class_values,
                                                          decision_restricted, restricted_class_values]
                 shape_spec_dict[shape].append(texture_spec)
 
-            csv_class_values(shape_dict, shape_categories, shape_spec_dict, 'results/' + model_type)
-            calculate_totals(shape_categories, 'results/' + model_type, verbose)
-            calculate_proportions('results/' + model_type, verbose)
-    '''
+            csv_class_values(shape_dict, shape_categories, shape_spec_dict, result_dir)
+            calculate_totals(shape_categories, result_dir, verbose)
+            calculate_proportions(model_type, result_dir, verbose)
 
 
 if __name__ == '__main__':
@@ -778,7 +720,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--silhouettes', help='Obtains similarities for triplets of silhouette images.',
                         required=False, action='store_true')
     parser.add_argument('--alpha', help='Transparency value for silhouette triplets. 1=no background texture info.'
-                                        '0=original Geirhos stimuli.', default=1)
+                                        '0=original Geirhos stimuli.', default=1, type=float)
     parser.add_argument('-c', '--cartoon', help='Obtains similarities for cartoon, novel stimuli.',
                         required=False, action='store_true')
     parser.add_argument('-g', '--grayscale', help='Runs simulations with a grayscale version of the Geirhos dataset.',
@@ -795,7 +737,7 @@ if __name__ == '__main__':
 
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
                   'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
-                  'swav', 'mocov2']
+                  'ViTB16', 'swav', 'mocov2']
 
     try:
         os.mkdir('results')
@@ -812,13 +754,14 @@ if __name__ == '__main__':
             for model_type in model_list:
                 print("Running simulations for {0}".format(model_type))
                 run_simulations(args, model_type)
-                calculate_similarity_totals(model_type, c, s, alpha)
+                if t or c:
+                    calculate_similarity_totals(model_type, c, s, alpha)
 
             print("\nCalculating ranks...")
             if t:
                 shape_bias_rankings('similarity')
-            elif s:
-                shape_bias_rankings('silhouette', alpha=alpha)
+            #elif s:
+                #shape_bias_rankings('silhouette', alpha=alpha)
             elif c:
                 shape_bias_rankings('cartoon')
 
@@ -828,4 +771,5 @@ if __name__ == '__main__':
 
     else:
         run_simulations(args, args.model)
-        calculate_similarity_totals(args.model, c, s, alpha)
+        if t or c:
+            calculate_similarity_totals(args.model, c, s, alpha)

@@ -9,6 +9,7 @@ import warnings
 import cv2
 from math import inf
 from random import sample, shuffle
+import transformers
 warnings.filterwarnings("ignore")
 
 
@@ -58,7 +59,9 @@ class GeirhosStyleTransferDataset(Dataset):
         """
         :param shape_dir: a directory for the style transfer dataset organized by shape
         :param texture_dir: a directory for the style transfer dataset organized by texture
-        :param transform: a set of image transformations
+        :param transform: a set of image transformations. NOTE: if the model being used is
+                          ViTB16, this will actually be the feature extractor object, which
+                          performs transforms on images for this model.
         """
 
         self.shape_dir = shape_dir
@@ -115,10 +118,11 @@ class GeirhosStyleTransferDataset(Dataset):
 
         image = Image.open(image_dir)  # Load image
 
-        #image.show()
-
         if self.transform:
-            image = self.transform(image)
+            if type(self.transform) == transformers.models.vit.feature_extraction_vit.ViTFeatureExtractor:
+                image = self.transform(images=image, return_tensors="pt")
+            else:
+                image = self.transform(image)
 
         shape = im_dict['shape']
         texture = im_dict['texture']
@@ -174,7 +178,9 @@ class GeirhosTriplets:
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
 
-        :param transform: a set of image transformations
+        :param transform: a set of image transformations. NOTE: if the model being used is
+                          ViTB16, this will actually be the feature extractor object, which
+                          performs transforms on images for this model.
         :param shape_dir: directory for the Geirhos dataset.
         :param same_instance: true if shape/texture matches should be by specific instance -
                               ie. cat4 is a match for cat4 but not for cat1. When false,
@@ -300,9 +306,17 @@ class GeirhosTriplets:
 
         # Apply transforms
         if self.transform:
-            anchor_im = self.transform(anchor_im)
-            shape_im = self.transform(shape_im)
-            texture_im = self.transform(texture_im)
+            if type(self.transform) == transformers.models.vit.feature_extraction_vit.ViTFeatureExtractor:
+                ims = [anchor_im, shape_im, texture_im]
+                outs = {key: None for key in ims}
+                for im in ims:
+                    outs[im] = self.transform(images=im, return_tensors="pt")
+                return outs[0], outs[1], outs[2]
+
+            else:
+                anchor_im = self.transform(anchor_im)
+                shape_im = self.transform(shape_im)
+                texture_im = self.transform(texture_im)
 
         return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
 
@@ -358,7 +372,9 @@ class CartoonStimTrials(Dataset):
         as the anchor.
 
         :param transform: appropriate transforms for the given model (should match training
-                      data stats)
+                      data stats). NOTE: if the model being used is ViTB16, this will actually
+                      be the feature extractor object, which performs transforms on images for
+                      this model.
         :param cartoon_dir: directory for artificial/cartoon images
         :param transform: transforms to be applied"""
 
@@ -496,7 +512,10 @@ class CartoonStimTrials(Dataset):
         im = self.make_square(im)
 
         if self.transform:
-            im = self.transform(im)
+            if type(self.transform) == transformers.models.vit.feature_extraction_vit.ViTFeatureExtractor:
+                im = self.transform(images=im, return_tensors="pt")
+            else:
+                im = self.transform(im)
 
         return im, name
 
@@ -523,7 +542,9 @@ class SilhouetteTriplets:
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
 
-        :param transform: a set of image transformations
+        :param transform: a set of image transformations. NOTE: if the model being used is
+                          ViTB16, this will actually be the feature extractor object, which
+                          performs transforms on images for this model.
         :param shape_dir: directory for the Geirhos dataset.
         :param alpha: controls transparency of masks. 1 = fully opaque masks. 0 = original
                       Geirhos stimuli.
@@ -670,7 +691,10 @@ class SilhouetteTriplets:
         im = Image.open(path)
 
         if self.transform:
-            im = self.transform(im)
+            if type(self.transform) == transformers.models.vit.feature_extraction_vit.ViTFeatureExtractor:
+                im = self.transform(images=im, return_tensors="pt")
+            else:
+                im = self.transform(im)
 
         return im, name
 

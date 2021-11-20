@@ -85,7 +85,7 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
         restricted_texture_dict[shape] = 0
 
     for filename in os.listdir(result_dir):
-        if filename[-4:] != '.csv' or filename == 'totals.csv':
+        if filename[-4:] != '.csv' or filename == 'totals.csv' or filename == 'proportions_avg.csv':
             continue
 
         df = pd.read_csv(result_dir + '/' + filename)
@@ -146,12 +146,13 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
     result_df.to_csv(result_dir + '/totals.csv', index=False)
 
 
-def calculate_proportions(result_dir, verbose=False):
+def calculate_proportions(model_type, result_dir, verbose=False):
     """Calculates the proportions of shape and texture decisions for a given model.
     There are two proportions calculated for both shape and texture: 1) with neither
     shape nor texture decisions included, and 2) without considering 'neither'
     decisions. Stores these proportions in a text file and optionally prints them.
 
+    :param model_type: saycam, resnet50, etc.
     :param result_dir: the directory of the results for the model."""
 
     df = pd.read_csv(result_dir + '/totals.csv')
@@ -168,6 +169,21 @@ def calculate_proportions(result_dir, verbose=False):
     shape_all = shape / total
     texture_all = texture / total
 
+    columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer']
+    metrics = ['no_neither', 'neither', 'restricted']
+    results = pd.DataFrame(index=range(len(metrics)), columns=columns)
+
+    results.at[:, 'Model'] = model_type
+    for i in range(len(metrics)):
+        results.at[i, 'Metric'] = metrics[i]
+    results.at[0, 'Shape Match Closer'] = shape_texture
+    results.at[0, 'Texture Match Closer'] = texture_shape
+    results.at[1, 'Shape Match Closer'] = shape_all
+    results.at[1, 'Texture Match Closer'] = texture_all
+    results.at[2, 'Shape Match Closer'] = shape_restricted
+    results.at[2, 'Texture Match Closer'] = texture_restricted
+
+    '''
     strings = ["Proportion of shape decisions (disregarding 'neither' decisions): " + str(shape_texture),
                "Proportion of texture decisions (disregarding 'neither' decisions): " + str(texture_shape),
                "Proportion of shape decisions (including 'neither' decisions): " + str(shape_all),
@@ -182,7 +198,8 @@ def calculate_proportions(result_dir, verbose=False):
             print(strings[i])
 
     file.close()
-
+    '''
+    results.to_csv(result_dir + '/proportions_avg.csv', index=False)
 
 def calculate_similarity_totals(model_type, c, s, alpha):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/

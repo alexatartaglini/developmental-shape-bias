@@ -463,7 +463,59 @@ def plot_number_of_triplets(c):
     plt.savefig('figures/anchors_by_texture_class.png')
 
 
+def plot_bias_charts():
+    model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
+                  'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
+                  'ViTB16', 'swav', 'mocov2']
 
+    saycam = ['saycam', 'saycamA', 'saycamS', 'saycamY']
+    supervised = ['resnet50', 'alexnet', 'vgg16', 'ViTB16']
+    self_supervised = ['dino_resnet50', 'swav', 'mocov2']
+    clip_models = ['clipRN50', 'clipRN50x4', 'clipRN50x16', 'clipViTB32', 'clipViTB16']
+
+    model_dict = {key: {"0": 0, "0.2":0, "0.4":0, "0.6":0, "0.8":0, "1.0":0} for key in model_list}
+
+    for model in model_list:
+        for alpha in model_dict[model].keys():
+            if alpha == "0":
+                prop_dir = 'results/' + model + '/similarity/proportions_avg.csv'
+            else:
+                prop_dir = 'results/' + model + '/silhouette_' + alpha + '/proportions_avg.csv'
+
+            props = pd.read_csv(prop_dir)
+            shape_bias = props.at[0, 'Shape Match Closer']
+
+            model_dict[model][alpha] = shape_bias
+
+    alphas = list(model_dict['saycam'].keys())
+    '''
+    alphas = list(model_dict['saycam'].keys())
+    plt.style.use('ggplot')
+    plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
+    for model in saycam:
+        plt.plot(alphas, list(model_dict[model].values()), label=model, marker='o')
+    plt.title("SAYCAM Models: Shape Bias vs. Alpha")
+    plt.xlabel('Alpha (background texture transparency)')
+    plt.ylabel('Proportion of Triplets with Closer Shape Match')
+    x1, x2, y1, y2 = plt.axis()
+    plt.axis((x1, x2, 0, 1))
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('saycam.png')
+    '''
+
+    plt.style.use('ggplot')
+    plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
+    for model in clip_models:
+        plt.plot(alphas, list(model_dict[model].values()), label=model, marker='o')
+    plt.title("CLIP Models: Shape Bias vs. Alpha")
+    plt.xlabel('Alpha (background texture transparency)')
+    plt.ylabel('Proportion of Triplets with Closer Shape Match')
+    x1, x2, y1, y2 = plt.axis()
+    plt.axis((x1, x2, 0, 1))
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('clip.png')
 
 if __name__ == "__main__":
-    plot_number_of_triplets(False)
+    plot_bias_charts()
