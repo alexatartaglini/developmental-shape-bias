@@ -4,7 +4,7 @@ import json
 from random import sample
 
 
-def write_html(model_type, simulation, num_triplets):
+def write_html(model_type, simulation, num_triplets, alpha=1.0):
     """This function creates an HTML page for a given model and simulation type (triplets
     or cartoon quadruplets). Each page contains visualizations of each triplet/quadruplet
     and the model's responses to the stimuli. The HTML script is written to a file.
@@ -14,12 +14,24 @@ def write_html(model_type, simulation, num_triplets):
     :param num_triplets: number of triplets to include (randomly sampled)"""
 
     im_titles = ['Anchor', 'Shape Match', 'Texture Match']
+    if alpha == 0:
+        alpha_string = '0'
+    else:
+        alpha_string = str(alpha)
 
     if simulation == 'triplets':
         stimuli = json.load(open('geirhos_triplets.json'))['all']
         stim_dir = 'stimuli-shape/style-transfer/'
         result_dir = 'results/' + model_type + '/similarity/'
         dataset = 'Geirhos Style Transfer Dataset'
+        term = 'Triplet'
+        padding = '377px'
+        size = 224
+    elif simulation == 'silhouette':
+        stimuli = json.load(open('geirhos_triplets.json'))['all']
+        stim_dir = 'stimuli-shape/texture-silhouettes-{0}/'.format(alpha_string)
+        result_dir = 'results/' + model_type + '/silhouette_{0}/'.format(alpha_string)
+        dataset = 'Textured Silhouette Dataset: Alpha = {0}'.format(alpha_string)
         term = 'Triplet'
         padding = '377px'
         size = 224
@@ -64,7 +76,7 @@ def write_html(model_type, simulation, num_triplets):
         triplet = stimuli[i]  # [anchor, shape match, texture match, color match]
         results = pd.read_csv(result_dir + triplet[0][:-4] + '.csv')
 
-        if simulation == 'triplets':
+        if simulation == 'triplets' or simulation == 'silhouette':
             result = results.loc[((results['Anchor'] == triplet[0][:-4])
                                   & (results['Shape Match'] == triplet[1][:-4])
                                   & (results['Texture Match'] == triplet[2][:-4]))]
@@ -82,7 +94,7 @@ def write_html(model_type, simulation, num_triplets):
             """
 
         for j in range(len(triplet)):
-            if simulation == 'triplets':
+            if simulation == 'triplets' or simulation == 'silhouette':
                 shape_class = ''.join(k for k in triplet[j].split('-')[0] if not k.isdigit())
                 im_path = stim_dir + shape_class + '/' + triplet[j]
             else:
@@ -150,6 +162,9 @@ def write_html(model_type, simulation, num_triplets):
     </html>
         """
 
+    if simulation == 'silhouette':
+        simulation = 'silhouette_{0}'.format(alpha_string)
+
     with open(f'results/visualizations/{model_type}_{simulation}.html', 'w') as f:
         f.write(html_string)
 
@@ -173,7 +188,7 @@ def assign_colors(df, simulation, im_titles):
         im_title = im_titles[i]
 
         for metric in metrics:
-            if simulation == 'triplets':
+            if simulation == 'triplets' or simulation == 'silhouette':
                 title_closer = df.loc[(df['Metric'] == metric)][im_title + ' Closer'].item()
             else:
                 title_closer = df.loc[(df['Metric'] == metric)][im_title + ' Closer'].item()
@@ -197,7 +212,10 @@ if __name__ == "__main__":
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
                   'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
                   'swav', 'mocov2']
+    alphas = ['0.2', '0.4', '0.6', '0.8', '1.0']
 
     for model in model_list:
         write_html(model, 'cartoon', 200)
         write_html(model, 'triplets', 200)
+        for a in alphas:
+            write_html(model, 'silhouette', 200, alpha=a)
