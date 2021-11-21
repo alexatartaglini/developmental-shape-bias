@@ -247,7 +247,7 @@ def plot_norm_histogram(model_type, c, g, s):
     plt.savefig(fig_dir)
 
 
-def plot_similarity_bar(g, c, s, alpha):
+def plot_similarity_bar(g, c, s, alpha, novel=False):
     """Plots a stacked bar plot of proportion shape/texture/(color) match according to
     similarity across models.
 
@@ -255,14 +255,15 @@ def plot_similarity_bar(g, c, s, alpha):
     :param c: True if using the artificial/cartoon stimuli dataset.
     :param s: True if using the silhouette variant of the style transfer dataset.
     :param alpha: controls transparency for silhouette simulations.
+    :param novel: true if novel silhouette stimuli are being used.
     """
 
     model_types = ['dino_resnet50', 'mocov2', 'swav', 'clipRN50', 'clipRN50x4', 'clipRN50x16',
-                   'clipViTB32', 'clipViTB16', 'alexnet', 'vgg16', 'resnet50', 'saycam', 'saycamA',
+                   'clipViTB32', 'clipViTB16', 'alexnet', 'vgg16', 'resnet50', 'ViTB16', 'saycam', 'saycamA',
                    'saycamS', 'saycamY']
     model_labels = ['DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'CLIP-ResNet50',
                     'CLIP-ResNet50x4', 'CLIP-ResNet50x16', 'CLIP-ViTB/32', 'CLIP-ViTB/16', 'AlexNet',
-                    'VGG-16', 'ResNet-50', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
+                    'VGG-16', 'ResNet-50', 'ViTB/16','ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
 
     if c:
         sub = 'cartoon'
@@ -271,7 +272,10 @@ def plot_similarity_bar(g, c, s, alpha):
         sub = 'grayscale'
         d = 2
     elif s:
-        sub = 'silhouette_' + str(alpha)
+        if novel:
+            sub = 'novel_silhouette_' + str(alpha)
+        else:
+            sub = 'silhouette_' + str(alpha)
         d = 2
     else:
         sub = 'similarity'
@@ -545,7 +549,3 @@ def plot_bias_charts():
     plt.legend()
     plt.tight_layout()
     plt.savefig('clip_alpha_plot.png')
-
-
-if __name__ == "__main__":
-    plot_bias_charts()

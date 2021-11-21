@@ -22,18 +22,27 @@ from random import sample
 logging.set_verbosity_error()  # Suppress warnings from Hugging Face
 
 
-def new_seed():
+def new_seed(novel):
     """ This function generates num_draws (see evaluate.py) random selections
     of triplets and stores them. The purpose of this is to ensure that all
     models are seeing the same random draw of triplets until this function
     is called again. Shape/texture similarity proportions for all models are
     calculated as the averages of shape/texture similarity proportions of a
-    number of random draws of triplets."""
+    number of random draws of triplets.
+
+    :args novel: true if using novel shape stimuli (novel-brodatz-1.0)"""
 
     num_draws = get_num_draws()
     selections = {i: None for i in range(num_draws)}
 
-    d = GeirhosTriplets(None)
+    if novel:
+        num_draws = 1
+        d = SilhouetteTriplets(None, 1.0, novel=True)
+        seed_path = 'novel_seed.json'
+    else:
+        d = GeirhosTriplets(None)
+        seed_path = 'seed.json'
+
     cap = d.max_num_triplets()
 
     for i in range(num_draws):
@@ -45,11 +54,11 @@ def new_seed():
 
         selections[i] = selection
 
-    with open('seed.json', 'w') as file:
+    with open(seed_path, 'w') as file:
         json.dump(selections, file)
 
 
-def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
+def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha, novel=False):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
@@ -63,6 +72,7 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
     :param g: true if using grayscale Geirhos dataset
     :param s: true if using silhouette version of Geirhos style transfer
     :param alpha: controls transparency for silhouette stimuli.
+    :param novel: true if using novel shape stimuli. (only use if s is True)
 
     :return: a dictionary indexed by image name that contains the embeddings for
         all images in a dataset extracted from the penultimate layer of a given
@@ -83,9 +93,13 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
         if g:
             embedding_dir = 'embeddings/' + model_type + '_gray.json'
         elif s:
-            dataset = SilhouetteTriplets(transform, alpha)
             alpha_str = dataset.get_alpha_str()
-            embedding_dir = 'embeddings/' + model_type + '_silhouette_' + alpha_str + '.json'
+            if novel:
+                dataset = SilhouetteTriplets(transform, alpha, novel=novel)
+                embedding_dir = 'embeddings/' + model_type + '_novel_silhouette_' + alpha_str + '.json'
+            else:
+                dataset = SilhouetteTriplets(transform, alpha)
+                embedding_dir = 'embeddings/' + model_type + '_silhouette_' + alpha_str + '.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
@@ -120,7 +134,7 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha):
     return embedding_dict
 
 
-def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir):
+def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir, novel=False):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
@@ -141,6 +155,7 @@ def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir)
     :param s: true if the silhouette version of the Geirhos dataset should be used.
     :param alpha: controls transparency for silhouette stimuli.
     :param shape_dir: directory for the Geirhos dataset.
+    :param novel: true if s is True and using novel shape stimuli.
 
     :return: a dictionary containing a dataframe of results and a path for a CSV file for
              each anchor stimulus.
@@ -161,7 +176,10 @@ def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir)
     # Set same_instance=False if you want matches to exclude same instances.
     same_instance = True
     if s:
-        t = SilhouetteTriplets(transform, alpha)
+        if novel:
+            t = SilhouetteTriplets(transform, alpha, novel=novel)
+        else:
+            t = SilhouetteTriplets(transform, alpha)
         alpha_str = t.get_alpha_str()
     else:
         t = GeirhosTriplets(transform, same_instance=same_instance)  # Default transforms.
@@ -244,7 +262,11 @@ def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir)
         if g:
             results[anchor] = [df, 'results/' + model_type + '/grayscale/' + anchor[:-4] + '.csv']
         elif s:
-            results[anchor] = [df, 'results/' + model_type + '/silhouette_' + alpha_str + '/' + anchor[:-4] + '.csv']
+            if novel:
+                results[anchor] = [df,
+                                   'results/' + model_type + '/novel_silhouette_' + alpha_str + '/' + anchor[:-4] + '.csv']
+            else:
+                results[anchor] = [df, 'results/' + model_type + '/silhouette_' + alpha_str + '/' + anchor[:-4] + '.csv']
         elif not same_instance:
             try:
                 os.mkdir('results/' + model_type + '/diff_instance')
@@ -532,6 +554,7 @@ def run_simulations(args, model_type):
     g = args.grayscale
     s = args.silhouettes
     alpha = args.alpha
+    novel = args.novel
 
     clip_list = ['clipRN50', 'clipRN50x4', 'clipRN50x16', 'clipViTB32', 'clipViTB16']
 
@@ -584,14 +607,20 @@ def run_simulations(args, model_type):
                 embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha)
         elif s:
             try:
-                os.mkdir('results/' + model_type + '/silhouette_' + str(alpha))
+                if novel:
+                    os.mkdir('results/' + model_type + '/novel_silhouette_' + str(alpha))
+                else:
+                    os.mkdir('results/' + model_type + '/silhouette_' + str(alpha))
             except FileExistsError:
                 pass
 
             try:
-                embeddings = json.load(open('embeddings/' + model_type + '_silhouette_' + str(alpha) + '.json'))
+                if novel:
+                    embeddings = json.load(open('embeddings/' + model_type + '_novel_silhouette_' + str(alpha) + '.json'))
+                else:
+                    embeddings = json.load(open('embeddings/' + model_type + '_silhouette_' + str(alpha) + '.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha, novel=novel)
         else:
             try:
                 os.mkdir('results/' + model_type + '/similarity')
@@ -603,7 +632,7 @@ def run_simulations(args, model_type):
             except FileNotFoundError:
                 embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha)
 
-        results = triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir)
+        results = triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir, novel=novel)
 
         # Convert result DataFrames to CSV files
         for anchor in results.keys():
@@ -747,6 +776,8 @@ if __name__ == '__main__':
                         required=False, action='store_true')
     parser.add_argument('-s', '--silhouettes', help='Obtains similarities for triplets of silhouette images.',
                         required=False, action='store_true')
+    parser.add_argument('--novel', help='Uses novel shape/texture stimuli triplets. This flag must be used with the -s flag.',
+                        required=False, action='store_true')
     parser.add_argument('--alpha', help='Transparency value for silhouette triplets. 1=no background texture info.'
                                         '0=original Geirhos stimuli.', default=1, type=float)
     parser.add_argument('-c', '--cartoon', help='Obtains similarities for cartoon, novel stimuli.',
@@ -781,8 +812,8 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    if new_seed or not os.path.exists('seed.json'):
-        new_seed()
+    if new_seed or not os.path.exists('seed.json') or not os.path.exists('novel_seed.json'):
+        new_seed(args.novel)
 
     if a:
         if not plot:
@@ -790,7 +821,7 @@ if __name__ == '__main__':
                 print("Running simulations for {0}".format(model_type))
                 run_simulations(args, model_type)
                 if t or c:
-                    calculate_similarity_totals(model_type, c, s, alpha)
+                    calculate_similarity_totals(model_type, c, s, alpha, novel=args.novel)
 
             print("\nCalculating ranks...")
             if t:
@@ -802,9 +833,9 @@ if __name__ == '__main__':
 
         else:
             g = args.grayscale
-            plot_similarity_bar(g, c, s, alpha)
+            plot_similarity_bar(g, c, s, alpha, novel=args.novel)
 
     else:
         run_simulations(args, args.model)
         if t or c:
-            calculate_similarity_totals(args.model, c, s, alpha)
+            calculate_similarity_totals(args.model, c, s, alpha, novel=args.novel)

@@ -8,8 +8,8 @@ import glob
 import warnings
 import cv2
 from math import inf
-from random import sample
 import transformers
+from random import randint
 warnings.filterwarnings("ignore")
 
 
@@ -538,7 +538,7 @@ class SilhouetteTriplets:
     filled with the texture of another. This is an attempt to make texture less
     salient and devise a more accurate measure of shape bias."""
 
-    def __init__(self, transform, alpha, shape_dir='stimuli-shape/style-transfer'):
+    def __init__(self, transform, alpha, novel=False, bg=None, shape_dir='stimuli-shape/style-transfer'):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
@@ -549,6 +549,11 @@ class SilhouetteTriplets:
         :param shape_dir: directory for the Geirhos dataset.
         :param alpha: controls transparency of masks. 1 = fully opaque masks. 0 = original
                       Geirhos stimuli.
+        :param novel: set to True if using novel stimulus shapes; note that alpha=1.0 in
+                      this case.
+        :param bg: (optional) the path to an image to be used as a background for silhouette
+                   stimuli (for the alpha=1.0 case). Replaces the solid white background of
+                   the stimuli with the image located at the given path.
         :param s_dir: the directory where the shape silhouettes are located.
         """
 
@@ -556,89 +561,156 @@ class SilhouetteTriplets:
         self.all_triplets = []
         self.triplets_by_image = {}
         self.transform = transform
+        self.bg = bg
+        self.novel = novel
+
+        if self.bg or self.novel:
+            alpha = 1.0
+
         self.alpha = int(alpha * 255)
         self.alpha_str = str(alpha)
 
         # Create/load dictionaries containing shape and texture classifications for each image
-        try:
-            # Load dictionary
-            self.shape_classes = json.load(open('geirhos_shape_classes.json'))
+        if self.novel:
+            shape_dir = 'stimuli-shape/novel-silhouettes-brodatz-' + str(self.alpha / 255)
 
-        except FileNotFoundError:
-            # Create dictionary
-            for image_dir in glob.glob('stimuli-shape/style-transfer/*/*.png'):
-                image = image_dir.split('/')
-                shape = image[2]  # Shape class of image
-                texture_spec = image[3].split('-')[1].replace('.png', '')  # Specific texture instance, eg. clock2
-                shape_spec = image[3].split('-')[0]  # Specific shape instance, eg. airplane1
-                texture = ''.join([i for i in texture_spec if not i.isdigit()])  # Texture class
+            try:
+                # Load dictionary
+                self.shape_classes = json.load(open('novel_shape_classes.json'))
 
-                if shape != texture:  # Filter images that are not cue-conflict
-                    self.shape_classes[image[3]] = {}  # Initialize dictionary for single image
-                    self.shape_classes[image[3]]['shape'] = shape
-                    self.shape_classes[image[3]]['texture'] = texture
-                    self.shape_classes[image[3]]['shape_spec'] = shape_spec
-                    self.shape_classes[image[3]]['texture_spec'] = texture_spec
-                    self.shape_classes[image[3]]['dir'] = image_dir
+            except FileNotFoundError:
+                shapes = [os.path.basename(x)[:-4] for x in glob.glob('stimuli-shape/novel-masks/*')]
+                textures = [os.path.basename(x)[:-4] for x in glob.glob('stimuli-shape/brodatz-textures/*')]
 
-            # Save dictionary as a JSON file
-            with open('geirhos_shape_classes.json', 'w') as file:
-                json.dump(self.shape_classes, file)
+                for shape in shapes:
+                    for texture in textures:
+                        stimulus = shape + '-' + texture + '.png'
 
-        # Generate/load triplets
-        try:
-            # Load triplets
-            self.triplets_by_image = json.load(open('geirhos_triplets.json'))
-            self.all_triplets = self.triplets_by_image['all']
-            self.triplets_by_image.pop('all')
+                        self.shape_classes[stimulus] = {'shape': shape, 'texture': texture,
+                                                   'dir': shape_dir + '/' + shape + '/' + stimulus}
 
-        except FileNotFoundError:
-            # Generate triplets
-            for image in self.shape_classes.keys(): # Iterate over anchor images
-                shape = self.shape_classes[image]['shape']
-                texture = self.shape_classes[image]['texture']
-                shape_spec = self.shape_classes[image]['shape_spec']
-                texture_spec = self.shape_classes[image]['texture_spec']
+                with open('novel_shape_classes.json', 'w') as file:
+                    json.dump(self.shape_classes, file)
 
-                self.triplets_by_image[image] = {}
-                self.triplets_by_image[image]['shape matches'] = []
-                self.triplets_by_image[image]['texture matches'] = []
-                self.triplets_by_image[image]['triplets'] = []
+            # Generate/load triplets
+            try:
+                # Load triplets
+                self.triplets_by_image = json.load(open('novel_triplets.json'))
+                self.all_triplets = self.triplets_by_image['all']
+                self.triplets_by_image.pop('all')
 
-                for shape_match in glob.glob(shape_dir + '/' + shape + '/' + shape_spec + '*.png'):
-                    if shape_match.split('/')[3].split('-')[0] != shape_spec:
-                        continue
-                    shape_match = shape_match.split('/')[-1]
-                    if shape_match == image or shape_match not in self.shape_classes.keys():
-                        continue
-                    elif self.shape_classes[shape_match]['texture'] == texture:
-                        continue  # Filters shape matches with same texture class
-                    self.triplets_by_image[image]['shape matches'].append(shape_match)
+            except FileNotFoundError:
+                for image in self.shape_classes.keys():  # Iterate over anchor images
+                    shape = self.shape_classes[image]['shape']
+                    texture = self.shape_classes[image]['texture']
 
-                for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '*.png'):
-                    if texture_match.split('/')[3].split('-')[1][:-4] != texture_spec:
-                        continue
-                    texture_match = texture_match.split('/')[-1]
-                    if texture_match == image or texture_match not in self.shape_classes.keys():
-                        continue
-                    elif self.shape_classes[texture_match]['shape'] == shape:
-                        continue  # Filter out texture matches with same shape class
-                    self.triplets_by_image[image]['texture matches'].append(texture_match)
+                    self.triplets_by_image[image] = {}
+                    self.triplets_by_image[image]['shape matches'] = []
+                    self.triplets_by_image[image]['texture matches'] = []
+                    self.triplets_by_image[image]['triplets'] = []
 
-                for shape_match in self.triplets_by_image[image]['shape matches']:
-                    for texture_match in self.triplets_by_image[image]['texture matches']:
-                        triplet = [image, shape_match, texture_match]
-                        self.triplets_by_image[image]['triplets'].append(triplet)
-                        self.all_triplets.append(triplet)
+                    for potential_match in self.shape_classes.keys():
+                        if potential_match == image:
+                            continue
+                        elif self.shape_classes[potential_match]['shape'] == shape:
+                            self.triplets_by_image[image]['shape matches'].append(potential_match)
+                        elif self.shape_classes[potential_match]['texture'] == texture:
+                            self.triplets_by_image[image]['texture matches'].append(potential_match)
 
-            self.triplets_by_image['all'] = self.all_triplets
+                    for shape_match in self.triplets_by_image[image]['shape matches']:
+                        for texture_match in self.triplets_by_image[image]['texture matches']:
+                            triplet = [image, shape_match, texture_match]
+                            self.triplets_by_image[image]['triplets'].append(triplet)
+                            self.all_triplets.append(triplet)
 
-            # Save dictionary as a JSON file
-            triplet_dir = 'geirhos_triplets.json'
-            with open(triplet_dir, 'w') as file:
-                json.dump(self.triplets_by_image, file)
-        
-        self.create_silhouette_stimuli(alpha=self.alpha)
+                self.triplets_by_image['all'] = self.all_triplets
+
+                # Save dictionary as a JSON file
+                triplet_dir = 'novel_triplets.json'
+                with open(triplet_dir, 'w') as file:
+                    json.dump(self.triplets_by_image, file)
+
+            self.create_silhouette_stimuli(alpha=self.alpha, s_dir='stimuli-shape/novel-masks')
+        else:
+            try:
+                # Load dictionary
+                self.shape_classes = json.load(open('geirhos_shape_classes.json'))
+
+            except FileNotFoundError:
+                # Create dictionary
+                for image_dir in glob.glob('stimuli-shape/style-transfer/*/*.png'):
+                    image = image_dir.split('/')
+                    shape = image[2]  # Shape class of image
+                    texture_spec = image[3].split('-')[1].replace('.png', '')  # Specific texture instance, eg. clock2
+                    shape_spec = image[3].split('-')[0]  # Specific shape instance, eg. airplane1
+                    texture = ''.join([i for i in texture_spec if not i.isdigit()])  # Texture class
+
+                    if shape != texture:  # Filter images that are not cue-conflict
+                        self.shape_classes[image[3]] = {}  # Initialize dictionary for single image
+                        self.shape_classes[image[3]]['shape'] = shape
+                        self.shape_classes[image[3]]['texture'] = texture
+                        self.shape_classes[image[3]]['shape_spec'] = shape_spec
+                        self.shape_classes[image[3]]['texture_spec'] = texture_spec
+                        self.shape_classes[image[3]]['dir'] = image_dir
+
+                # Save dictionary as a JSON file
+                with open('geirhos_shape_classes.json', 'w') as file:
+                    json.dump(self.shape_classes, file)
+
+            # Generate/load triplets
+            try:
+                # Load triplets
+                self.triplets_by_image = json.load(open('geirhos_triplets.json'))
+                self.all_triplets = self.triplets_by_image['all']
+                self.triplets_by_image.pop('all')
+
+            except FileNotFoundError:
+                # Generate triplets
+                for image in self.shape_classes.keys(): # Iterate over anchor images
+                    shape = self.shape_classes[image]['shape']
+                    texture = self.shape_classes[image]['texture']
+                    shape_spec = self.shape_classes[image]['shape_spec']
+                    texture_spec = self.shape_classes[image]['texture_spec']
+
+                    self.triplets_by_image[image] = {}
+                    self.triplets_by_image[image]['shape matches'] = []
+                    self.triplets_by_image[image]['texture matches'] = []
+                    self.triplets_by_image[image]['triplets'] = []
+
+                    for shape_match in glob.glob(shape_dir + '/' + shape + '/' + shape_spec + '*.png'):
+                        if shape_match.split('/')[3].split('-')[0] != shape_spec:
+                            continue
+                        shape_match = shape_match.split('/')[-1]
+                        if shape_match == image or shape_match not in self.shape_classes.keys():
+                            continue
+                        elif self.shape_classes[shape_match]['texture'] == texture:
+                            continue  # Filters shape matches with same texture class
+                        self.triplets_by_image[image]['shape matches'].append(shape_match)
+
+                    for texture_match in glob.glob(shape_dir + '/*/*' + texture_spec + '*.png'):
+                        if texture_match.split('/')[3].split('-')[1][:-4] != texture_spec:
+                            continue
+                        texture_match = texture_match.split('/')[-1]
+                        if texture_match == image or texture_match not in self.shape_classes.keys():
+                            continue
+                        elif self.shape_classes[texture_match]['shape'] == shape:
+                            continue  # Filter out texture matches with same shape class
+                        self.triplets_by_image[image]['texture matches'].append(texture_match)
+
+                    for shape_match in self.triplets_by_image[image]['shape matches']:
+                        for texture_match in self.triplets_by_image[image]['texture matches']:
+                            triplet = [image, shape_match, texture_match]
+                            self.triplets_by_image[image]['triplets'].append(triplet)
+                            self.all_triplets.append(triplet)
+
+                self.triplets_by_image['all'] = self.all_triplets
+
+                # Save dictionary as a JSON file
+                triplet_dir = 'geirhos_triplets.json'
+                with open(triplet_dir, 'w') as file:
+                    json.dump(self.triplets_by_image, file)
+
+            self.create_silhouette_stimuli(alpha=self.alpha)
 
     def create_silhouette_stimuli(self, alpha, s_dir='stimuli-shape/filled-silhouettes'):
         """Create and save the silhouette stimuli if they do not already exist.
@@ -646,43 +718,94 @@ class SilhouetteTriplets:
         :param alpha: controls the transparency of the masks. alpha = 0 generates the
                       original Geirhos dataset. alpha = 1 generates a dataset with fully
                       opaque masks. Any alpha in (0, 1) will mask the background texture to
-                      varying degrees (with white pixels)."""
+                      varying degrees (with white pixels).
+        :param s_dir: the path to a folder containing the shape masks. By default, uses
+                      the Geirhos filled silhouettes as masks. Setting novel=True when
+                      initializing a SilhouetteTriplets object means that novel shape
+                      masks will be used instead."""
 
         alpha_dir = '-' + str(alpha / 255)
 
-        try:
-            os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir)
-        except FileExistsError:
-            return
-
-        for im_name in self.shape_classes.keys():
-            im_path = self.shape_classes[im_name]['dir']
-            mask_path = s_dir + '/' + self.shape_classes[im_name]['shape'] + '/' + \
-                        self.shape_classes[im_name]['shape_spec'] + '.png'
-
+        if self.novel:
             try:
-                os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir + '/' +
-                         self.shape_classes[im_name]['shape'])
+                os.mkdir('stimuli-shape/novel-silhouettes-brodatz' + alpha_dir)
             except FileExistsError:
-                pass
+                return
 
-            im = Image.open(im_path)
-            mask = Image.open(mask_path).convert('RGBA')
-            mask_data = mask.getdata()
+            for im_name in self.shape_classes.keys():
+                im_path = self.shape_classes[im_name]['dir']
+                mask_path = s_dir + '/' + self.shape_classes[im_name]['shape'] + '.png'
 
-            new_data = []
-            for item in mask_data:
-                if item[0] == 0 and item[1] == 0 and item[2] == 0:
-                    new_data.append(item)
-                else:
-                    new_data.append((0, 0, 0, 255 - alpha))
+                try:
+                    os.mkdir('stimuli-shape/novel-silhouettes-brodatz' + alpha_dir + '/' +
+                             self.shape_classes[im_name]['shape'])
+                except FileExistsError:
+                    pass
 
-            mask.putdata(new_data)
+                im = Image.open('stimuli-shape/brodatz-textures' + '/' + self.shape_classes[im_name]['texture'] + '.png')
+                mask = Image.open(mask_path).convert('RGBA')
+                mask_data = mask.getdata()
 
-            base = Image.new('RGB', mask.size, (255, 255, 255))
-            base.paste(im, mask=mask.split()[3])
-            base.save('stimuli-shape/texture-silhouettes' + alpha_dir + '/' +
-                         self.shape_classes[im_name]['shape'] + '/' + im_name)
+                bound = im.size[0] - mask.size[0]
+                x = randint(0, bound)
+                y = randint(0, bound)
+                im = im.crop((x, y, x + mask.size[0], y + mask.size[0]))
+
+                new_data = []
+                for item in mask_data:
+                    if item[0] == 0 and item[1] == 0 and item[2] == 0:
+                        new_data.append(item)
+                    else:
+                        new_data.append((0, 0, 0, 255 - alpha))
+
+                mask.putdata(new_data)
+
+                base = Image.new('RGB', mask.size, (255, 255, 255))
+                base.paste(im, mask=mask.split()[3])
+
+                base = base.resize((180, 180))
+                base2 = Image.new('RGB', mask.size, (255, 255, 255))
+
+                img_w, img_h = base.size
+                bg_w, bg_h = base2.size
+                offset = ((bg_w - img_w) // 2, (bg_h - img_h) // 2)
+
+                base2.paste(base, offset)
+                base2.save(im_path)
+        else:
+            try:
+                os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir)
+            except FileExistsError:
+                return
+
+            for im_name in self.shape_classes.keys():
+                im_path = self.shape_classes[im_name]['dir']
+                mask_path = s_dir + '/' + self.shape_classes[im_name]['shape'] + '/' + \
+                            self.shape_classes[im_name]['shape_spec'] + '.png'
+
+                try:
+                    os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir + '/' +
+                             self.shape_classes[im_name]['shape'])
+                except FileExistsError:
+                    pass
+
+                im = Image.open(im_path)
+                mask = Image.open(mask_path).convert('RGBA')
+                mask_data = mask.getdata()
+
+                new_data = []
+                for item in mask_data:
+                    if item[0] == 0 and item[1] == 0 and item[2] == 0:
+                        new_data.append(item)
+                    else:
+                        new_data.append((0, 0, 0, 255 - alpha))
+
+                mask.putdata(new_data)
+
+                base = Image.new('RGB', mask.size, (255, 255, 255))
+                base.paste(im, mask=mask.split()[3])
+                base.save('stimuli-shape/texture-silhouettes' + alpha_dir + '/' +
+                          self.shape_classes[im_name]['shape'] + '/' + im_name)
 
     def __getitem__(self, idx):
         """For a given singular index, returns the singular image corresponding to that index.
@@ -691,7 +814,10 @@ class SilhouetteTriplets:
         :return: the image with transforms applied and the image name."""
 
         name = list(self.shape_classes.keys())[idx]
-        path = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/' + self.shape_classes[name]['shape'] \
+        if self.novel:
+            path = 'stimuli-shape/novel-silhouettes-brodatz-1.0/' + name
+        else:
+            path = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/' + self.shape_classes[name]['shape'] \
                + '/' + name
         im = Image.open(path)
 
@@ -715,7 +841,10 @@ class SilhouetteTriplets:
 
         :return: the anchor, shape match, and texture match images with transforms applied."""
 
-        s_dir = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/'
+        if self.novel:
+            s_dir = 'stimuli-shape/novel-silhouettes-brodatz-1.0/'
+        else:
+            s_dir = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/'
 
         anchor_path = s_dir + self.shape_classes[triplet[0]]['shape'] + '/' + triplet[0]
         shape_path = s_dir + self.shape_classes[triplet[1]]['shape'] + '/' + triplet[1]
@@ -766,7 +895,11 @@ class SilhouetteTriplets:
         :return: a dictionary of randomly selected triplets per anchor image such that
                  each anchor image has an equal number of triplets."""
 
-        selections = json.load(open('seed.json'))
+        if self.novel:
+            selections = json.load(open('novel_seed.json'))
+        else:
+            selections = json.load(open('seed.json'))
+
         return selections[str(draw)]
 
     def get_alpha_str(self):
