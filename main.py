@@ -58,7 +58,7 @@ def new_seed(novel):
         json.dump(selections, file)
 
 
-def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha, novel=False):
+def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha, novel=False, bg=None):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
@@ -73,11 +73,17 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha, nov
     :param s: true if using silhouette version of Geirhos style transfer
     :param alpha: controls transparency for silhouette stimuli.
     :param novel: true if using novel shape stimuli. (only use if s is True)
+    :param bg: path to an image to be used as a background for alpha=1.0 silhouette stimuli.
 
     :return: a dictionary indexed by image name that contains the embeddings for
         all images in a dataset extracted from the penultimate layer of a given
         model.
     """
+
+    if bg:
+        bg_str = '_bg'
+    else:
+        bg_str = ''
 
     try:
         os.mkdir('embeddings')
@@ -95,11 +101,11 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha, nov
         elif s:
             alpha_str = dataset.get_alpha_str()
             if novel:
-                dataset = SilhouetteTriplets(transform, alpha, novel=novel)
-                embedding_dir = 'embeddings/' + model_type + '_novel_silhouette_' + alpha_str + '.json'
+                dataset = SilhouetteTriplets(transform, alpha, novel=novel, bg=bg)
+                embedding_dir = 'embeddings/' + model_type + '_novel_silhouette_' + alpha_str + bg_str + '.json'
             else:
-                dataset = SilhouetteTriplets(transform, alpha)
-                embedding_dir = 'embeddings/' + model_type + '_silhouette_' + alpha_str + '.json'
+                dataset = SilhouetteTriplets(transform, alpha, bg=bg)
+                embedding_dir = 'embeddings/' + model_type + '_silhouette_' + alpha_str + bg_str + '.json'
         else:
             embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
     else:
@@ -134,7 +140,7 @@ def get_embeddings(dir, penult_model, model_type, transform, t, g, s, alpha, nov
     return embedding_dict
 
 
-def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir, novel=False):
+def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir, novel=False, bg=None):
     """First generates all possible triplets of the following form:
     (anchor image, shape match, texture match). Then retrieves the activations
     of the penultimate layer of a given model for each image in the triplet.
@@ -156,10 +162,16 @@ def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir,
     :param alpha: controls transparency for silhouette stimuli.
     :param shape_dir: directory for the Geirhos dataset.
     :param novel: true if s is True and using novel shape stimuli.
+    :param bg: path to an image to be used as a background for alpha=1.0 silhouette stimuli.
 
     :return: a dictionary containing a dataframe of results and a path for a CSV file for
              each anchor stimulus.
     """
+
+    if bg:
+        bg_str = '_bg'
+    else:
+        bg_str = ''
 
     if g:
         if not os.path.isdir('stimuli-shape/style-transfer-gray'):  # Create grayscale images
@@ -177,9 +189,9 @@ def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir,
     same_instance = True
     if s:
         if novel:
-            t = SilhouetteTriplets(transform, alpha, novel=novel)
+            t = SilhouetteTriplets(transform, alpha, novel=novel, bg=bg)
         else:
-            t = SilhouetteTriplets(transform, alpha)
+            t = SilhouetteTriplets(transform, alpha, bg=bg)
         alpha_str = t.get_alpha_str()
     else:
         t = GeirhosTriplets(transform, same_instance=same_instance)  # Default transforms.
@@ -264,9 +276,11 @@ def triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir,
         elif s:
             if novel:
                 results[anchor] = [df,
-                                   'results/' + model_type + '/novel_silhouette_' + alpha_str + '/' + anchor[:-4] + '.csv']
+                                   'results/' + model_type + '/novel_silhouette_' + alpha_str + bg_str + '/'
+                                   + anchor[:-4] + '.csv']
             else:
-                results[anchor] = [df, 'results/' + model_type + '/silhouette_' + alpha_str + '/' + anchor[:-4] + '.csv']
+                results[anchor] = [df, 'results/' + model_type + '/silhouette_' + alpha_str + bg_str + '/'
+                                   + anchor[:-4] + '.csv']
         elif not same_instance:
             try:
                 os.mkdir('results/' + model_type + '/diff_instance')
@@ -538,6 +552,8 @@ def run_simulations(args, model_type):
     If g flag: runs simulations using a grayscale version of the Geirhos dataset.
     If s flag: runs simulations using versions of the Geirhos style transfer dataset with
                white backgrounds.
+        - If novel + s flag, novel shape stimuli will be used.
+        - If bg + s flag, stimuli over a background image will be used.
 
     By default, the model is the SAYCAM-trained resnext model. This can be changed when running
     this program in the terminal by using -m 'model_type' or the --all flag, which will run
@@ -555,6 +571,12 @@ def run_simulations(args, model_type):
     s = args.silhouettes
     alpha = args.alpha
     novel = args.novel
+    bg = args.bg
+
+    if bg:
+        bg_str = '_bg'
+    else:
+        bg_str = ''
 
     clip_list = ['clipRN50', 'clipRN50x4', 'clipRN50x16', 'clipViTB32', 'clipViTB16']
 
@@ -608,19 +630,21 @@ def run_simulations(args, model_type):
         elif s:
             try:
                 if novel:
-                    os.mkdir('results/' + model_type + '/novel_silhouette_' + str(alpha))
+                    os.mkdir('results/' + model_type + '/novel_silhouette_' + str(alpha) + bg_str)
                 else:
-                    os.mkdir('results/' + model_type + '/silhouette_' + str(alpha))
+                    os.mkdir('results/' + model_type + '/silhouette_' + str(alpha) + bg_str)
             except FileExistsError:
                 pass
 
             try:
                 if novel:
-                    embeddings = json.load(open('embeddings/' + model_type + '_novel_silhouette_' + str(alpha) + '.json'))
+                    embeddings = json.load(open('embeddings/' + model_type + '_novel_silhouette_' + str(alpha) +
+                                                bg_str +'.json'))
                 else:
-                    embeddings = json.load(open('embeddings/' + model_type + '_silhouette_' + str(alpha) + '.json'))
+                    embeddings = json.load(open('embeddings/' + model_type + '_silhouette_' + str(alpha) +
+                                                bg_str + '.json'))
             except FileNotFoundError:
-                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha, novel=novel)
+                embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha, novel=novel, bg=bg)
         else:
             try:
                 os.mkdir('results/' + model_type + '/similarity')
@@ -632,7 +656,7 @@ def run_simulations(args, model_type):
             except FileNotFoundError:
                 embeddings = get_embeddings(shape_dir, penult_model, model_type, transform, t, g, s, alpha)
 
-        results = triplets(model_type, transform, embeddings, verbose, g, s, alpha, shape_dir, novel=novel)
+        results = triplets(model_type, transform, embeddings, verbose, g, s, alpha, bg, shape_dir, novel=novel)
 
         # Convert result DataFrames to CSV files
         for anchor in results.keys():
@@ -675,7 +699,7 @@ def run_simulations(args, model_type):
             df.to_csv(path, index=False)
 
     else:  # Run simulations in the style of Geirhos et al.; ie., obtain classifications
-        result_dir = 'results/' + model_type + '/classifications/silhouette_' + str(alpha)
+        result_dir = 'results/' + model_type + '/classifications/silhouette_' + str(alpha) + bg_str
 
         try:
             os.mkdir('results/' + model_type + '/classifications')
@@ -701,7 +725,7 @@ def run_simulations(args, model_type):
         #style_transfer_dataset = GeirhosStyleTransferDataset(shape_dir, texture_dir, transform)
         #style_transfer_dataloader = DataLoader(style_transfer_dataset, batch_size=1, shuffle=False)
 
-        silhouette_dataset = SilhouetteTriplets(transform, alpha)
+        silhouette_dataset = SilhouetteTriplets(transform, alpha, bg=bg)
         silhouette_dataloader = DataLoader(silhouette_dataset, batch_size=1, shuffle=False)
 
         #if not os.path.isdir('stimuli-texture'):
@@ -778,6 +802,8 @@ if __name__ == '__main__':
                         required=False, action='store_true')
     parser.add_argument('--novel', help='Uses novel shape/texture stimuli triplets. This flag must be used with the -s flag.',
                         required=False, action='store_true')
+    parser.add_argument('--bg', help='Runs silhouette triplet simulations (-s, -t) using stimuli with an image background.',
+                        required=False, default=None)
     parser.add_argument('--alpha', help='Transparency value for silhouette triplets. 1=no background texture info.'
                                         '0=original Geirhos stimuli.', default=1, type=float)
     parser.add_argument('-c', '--cartoon', help='Obtains similarities for cartoon, novel stimuli.',
@@ -797,6 +823,7 @@ if __name__ == '__main__':
     c = args.cartoon
     s = args.silhouettes
     alpha = args.alpha
+    bg = args.bg
 
     model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
                   'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
@@ -821,7 +848,7 @@ if __name__ == '__main__':
                 print("Running simulations for {0}".format(model_type))
                 run_simulations(args, model_type)
                 if t or c:
-                    calculate_similarity_totals(model_type, c, s, alpha, novel=args.novel)
+                    calculate_similarity_totals(model_type, c, s, alpha, novel=args.novel, bg=bg)
 
             print("\nCalculating ranks...")
             if t:
@@ -833,9 +860,9 @@ if __name__ == '__main__':
 
         else:
             g = args.grayscale
-            plot_similarity_bar(g, c, s, alpha, novel=args.novel)
+            plot_similarity_bar(g, c, s, alpha, novel=args.novel, bg=bg)
 
     else:
         run_simulations(args, args.model)
         if t or c:
-            calculate_similarity_totals(args.model, c, s, alpha, novel=args.novel)
+            calculate_similarity_totals(args.model, c, s, alpha, novel=args.novel, bg=bg)

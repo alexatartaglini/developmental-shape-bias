@@ -730,7 +730,37 @@ class SilhouetteTriplets:
             try:
                 os.mkdir('stimuli-shape/novel-silhouettes-brodatz' + alpha_dir)
             except FileExistsError:
-                return
+                if self.bg:
+                    try:
+                        os.mkdir('stimuli-shape/novel-silhouettes-brodatz' + alpha_dir + '-bg')
+
+                        for im_name in self.shape_classes.keys():
+                            try:
+                                os.mkdir('stimuli-shape/novel-silhouettes-brodatz' + alpha_dir + '-bg/' +
+                                         self.shape_classes[im_name]['shape'])
+                            except FileExistsError:
+                                pass
+                            im_path = self.shape_classes[im_name]['dir']
+                            base = Image.open(im_path).convert('RGBA')
+                            base2 = Image.open(self.bg).convert('RGBA')
+
+                            data = base.getdata()
+
+                            new_data = []
+                            for item in data:
+                                if item[0] == 255 and item[1] == 255 and item[2] == 255:
+                                    new_data.append((255, 255, 255, 0))
+                                else:
+                                    new_data.append(item)
+
+                            base.putdata(new_data)
+                            base2.paste(base, mask=base)
+                            base2.save('stimuli-shape/novel-silhouettes-brodatz' + alpha_dir + '-bg/' +
+                                         self.shape_classes[im_name]['shape'] + '/' + im_name)
+                    except FileExistsError:
+                        return
+                else:
+                    return
 
             for im_name in self.shape_classes.keys():
                 im_path = self.shape_classes[im_name]['dir']
@@ -776,7 +806,39 @@ class SilhouetteTriplets:
             try:
                 os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir)
             except FileExistsError:
-                return
+                if self.bg:
+                    try:
+                        os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir + '-bg')
+
+                        for im_name in self.shape_classes.keys():
+                            try:
+                                os.mkdir('stimuli-shape/texture-silhouettes' + alpha_dir + '-bg/' +
+                                         self.shape_classes[im_name]['shape'])
+                            except FileExistsError:
+                                pass
+
+                            im_path = 'stimuli-shape/texture-silhouettes-1.0/' + \
+                                      self.shape_classes[im_name]['shape'] + '/' + im_name
+                            base = Image.open(im_path).convert('RGBA')
+                            base2 = Image.open(self.bg).convert('RGBA')
+
+                            data = base.getdata()
+
+                            new_data = []
+                            for item in data:
+                                if item[0] == 255 and item[1] == 255 and item[2] == 255:
+                                    new_data.append((255, 255, 255, 0))
+                                else:
+                                    new_data.append(item)
+
+                            base.putdata(new_data)
+                            base2.paste(base, mask=base)
+                            base2.save('stimuli-shape/texture-silhouettes' + alpha_dir + '-bg/' +
+                                       self.shape_classes[im_name]['shape'] + '/' + im_name)
+                    except FileExistsError:
+                        return
+                else:
+                    return
 
             for im_name in self.shape_classes.keys():
                 im_path = self.shape_classes[im_name]['dir']
@@ -815,10 +877,18 @@ class SilhouetteTriplets:
 
         name = list(self.shape_classes.keys())[idx]
         if self.novel:
-            path = 'stimuli-shape/novel-silhouettes-brodatz-1.0/' + name
+            if self.bg:
+                path = 'stimuli-shape/novel-silhouettes-brodatz-1.0-bg/' + name
+            else:
+                path = 'stimuli-shape/novel-silhouettes-brodatz-1.0/' + name
         else:
-            path = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/' + self.shape_classes[name]['shape'] \
-               + '/' + name
+            if self.bg:
+                path = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '-bg/' + self.shape_classes[name][
+                    'shape'] \
+                       + '/' + name
+            else:
+                path = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/' + self.shape_classes[name]['shape'] \
+                   + '/' + name
         im = Image.open(path)
 
         if self.transform:
@@ -842,9 +912,15 @@ class SilhouetteTriplets:
         :return: the anchor, shape match, and texture match images with transforms applied."""
 
         if self.novel:
-            s_dir = 'stimuli-shape/novel-silhouettes-brodatz-1.0/'
+            if self.bg:
+                s_dir = 'stimuli-shape/novel-silhouettes-brodatz-1.0-bg/'
+            else:
+                s_dir = 'stimuli-shape/novel-silhouettes-brodatz-1.0/'
         else:
-            s_dir = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/'
+            if self.bg:
+                s_dir = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '-bg/'
+            else:
+                s_dir = 'stimuli-shape/texture-silhouettes-' + str(self.alpha / 255) + '/'
 
         anchor_path = s_dir + self.shape_classes[triplet[0]]['shape'] + '/' + triplet[0]
         shape_path = s_dir + self.shape_classes[triplet[1]]['shape'] + '/' + triplet[1]

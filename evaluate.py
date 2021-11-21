@@ -218,7 +218,7 @@ def calculate_proportions(model_type, result_dir, verbose=False):
     '''
     results.to_csv(result_dir + '/proportions_avg.csv', index=False)
 
-def calculate_similarity_totals(model_type, c, s, alpha, novel=False):
+def calculate_similarity_totals(model_type, c, s, alpha, novel=False, bg=None):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/
     Euclidean distance is closer for a given model. Stores proportions as a csv.
 
@@ -227,7 +227,13 @@ def calculate_similarity_totals(model_type, c, s, alpha, novel=False):
     :param s: true if silhouette variant of style transfer dataset is being used.
     :param alpha: controls transparency for Silhouette triplets
     :param novel: True if using novel shape silhouette triplets
+    :param bg: path to an image to be used as a background for alpha=1.0 silhouette stimuli.
     """
+
+    if bg:
+        bg_str = '_bg'
+    else:
+        bg_str = ''
 
     if c:
         sim_dir = 'results/' + model_type + '/cartoon/'
@@ -235,13 +241,13 @@ def calculate_similarity_totals(model_type, c, s, alpha, novel=False):
     elif s:
         if novel:
             num_draws = 1
-            dataset = SilhouetteTriplets(None, alpha, novel=True)
+            dataset = SilhouetteTriplets(None, alpha, novel=True, bg=bg)
             alpha_str = dataset.get_alpha_str()
-            sim_dir = 'results/' + model_type + '/novel_silhouette_' + alpha_str + '/'
+            sim_dir = 'results/' + model_type + '/novel_silhouette_' + alpha_str + bg_str + '/'
         else:
-            dataset = SilhouetteTriplets(None, alpha)
+            dataset = SilhouetteTriplets(None, alpha, bg=bg)
             alpha_str = dataset.get_alpha_str()
-            sim_dir = 'results/' + model_type + '/silhouette_' + alpha_str + '/'
+            sim_dir = 'results/' + model_type + '/silhouette_' + alpha_str + bg_str + '/'
     else:
         sim_dir = 'results/' + model_type +'/similarity/'
         dataset = GeirhosTriplets(None)
