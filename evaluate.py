@@ -1,7 +1,7 @@
 import pandas as pd
 import glob
 import os
-from data import GeirhosTriplets, CartoonStimTrials, SilhouetteTriplets
+from data import SilhouetteTriplets
 
 # This defines the number of times triplets are randomly selected in the
 # calculation of proportions. In other words, when num_draws = n, the
@@ -74,14 +74,13 @@ def csv_class_values(shape_dict, shape_categories, shape_spec_dict, csv_dir):
         df.to_csv(csv_dir + '/' + shape + '.csv', index=False)
 
 
-def calculate_totals(shape_categories, result_dir, verbose=False):
+def calculate_totals(shape_categories, result_dir):
     """Calculates the total number of shape, texture, and neither shape nor
     texture decisions by Geirhos shape class (and overall). Stores these
     results in a CSV and optionally prints them out.
 
     :param shape_categories: a list of Geirhos shape classes.
-    :param result_dir: where to store the results.
-    :param verbose: True if you want to print the results as well as store them."""
+    :param result_dir: where to store the results."""
 
     shape_dict = dict.fromkeys(shape_categories)
     texture_dict = dict.fromkeys(shape_categories)
@@ -116,18 +115,6 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
                 restricted_texture_dict[shape] += row['Restricted Texture Decision']
 
     for shape in shape_categories:
-        if verbose:
-            print("Shape category: " + shape)
-            print("\tNumber shape decisions: " + str(shape_dict[shape]))
-            print("\tNumber texture decisions: " + str(texture_dict[shape]))
-            print("\tNumber neither shape nor texture decisions: " + str(neither_dict[shape]))
-            print("\t---------------------------------------------")
-            print("\tNumber shape decisions (restricted to only shape/texture classes): "
-                  + str(restricted_shape_dict[shape]))
-            print("\tNumber texture decisions (restricted to only shape/texture classes): "
-                  + str(restricted_texture_dict[shape]))
-            print()
-
         shape_idx = shape_categories.index(shape)
         result_df.at[shape_idx, 'Shape Category'] = shape
         result_df.at[shape_idx, 'Number Shape Decisions'] = shape_dict[shape]
@@ -137,18 +124,6 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
         result_df.at[shape_idx, 'Number Restricted Texture Decisions'] = restricted_texture_dict[shape]
         result_df.at[shape_idx, 'Total Number Stimuli'] = shape_dict[shape] + texture_dict[shape] +\
                                                           neither_dict[shape]
-
-    if verbose:
-        print("IN TOTAL:")
-        print("\tNumber shape decisions: " + str(sum(shape_dict.values())))
-        print("\tNumber texture decisions: " + str(sum(texture_dict.values())))
-        print("\tNumber neither shape nor texture decisions: " + str(sum(neither_dict.values())))
-        print("\t---------------------------------------------")
-        print("\tNumber shape decisions (restricted to only shape/texture classes): "
-              + str(sum(restricted_shape_dict.values())))
-        print("\tNumber texture decisions (restricted to only shape/texture classes): "
-              + str(sum(restricted_texture_dict.values())))
-        print()
 
     idx = len(shape_categories)  # final row
     result_df.at[idx, 'Shape Category'] = 'total'
@@ -163,7 +138,7 @@ def calculate_totals(shape_categories, result_dir, verbose=False):
     result_df.to_csv(result_dir + '/totals.csv', index=False)
 
 
-def calculate_proportions(model_type, result_dir, verbose=False):
+def calculate_proportions(model_type, result_dir):
     """Calculates the proportions of shape and texture decisions for a given model.
     There are two proportions calculated for both shape and texture: 1) with neither
     shape nor texture decisions included, and 2) without considering 'neither'
@@ -211,71 +186,79 @@ def calculate_proportions(model_type, result_dir, verbose=False):
 
     for i in range(len(strings)):
         file.write(strings[i] + '\n')
-        if verbose:
-            print(strings[i])
 
     file.close()
     '''
     results.to_csv(result_dir + '/proportions_avg.csv', index=False)
 
-def calculate_similarity_totals(model_type, c, s, alpha, novel=False, bg=None):
+
+def calculate_similarity_totals(args, model_type, stimuli_dir, n=-1, N=0):
     """Calculates proportion of times the shape/texture dot product/cosine similarity/
     Euclidean distance is closer for a given model. Stores proportions as a csv.
 
+    :param args: command line args to be obtained from main.py
     :param model_type: saycam, resnet50, etc.
-    :param c: true if the artificial/cartoon stimulus dataset is being used.
-    :param s: true if silhouette variant of style transfer dataset is being used.
-    :param alpha: controls transparency for Silhouette triplets
-    :param novel: True if using novel shape silhouette triplets
-    :param bg: path to an image to be used as a background for alpha=1.0 silhouette stimuli.
+    :param stimuli_dir: location of stimuli that the results are calculated for
+    :param n: for use when model_type = resnet50_random or ViTB16_random. Specifies
+              which particular random model to use
+    :param N: total number of random models
     """
 
-    if bg:
-        bg_str = '_bg'
+    if args.novel:
+        num_draws = 1
     else:
-        bg_str = ''
-
-    if c:
-        sim_dir = 'results/' + model_type + '/cartoon/'
-        dataset = CartoonStimTrials(None)
-    elif s:
-        if novel:
-            num_draws = 1
-            dataset = SilhouetteTriplets(None, alpha, novel=True, bg=bg)
-            alpha_str = dataset.get_alpha_str()
-            sim_dir = 'results/' + model_type + '/novel_silhouette_' + alpha_str + bg_str + '/'
-        else:
-            dataset = SilhouetteTriplets(None, alpha, bg=bg)
-            alpha_str = dataset.get_alpha_str()
-            sim_dir = 'results/' + model_type + '/silhouette_' + alpha_str + bg_str + '/'
-    else:
-        sim_dir = 'results/' + model_type +'/similarity/'
-        dataset = GeirhosTriplets(None)
+        num_draws = get_num_draws()
 
     metrics = ['cos', 'dot', 'ed']
-    # Values for dictionary below: [shape_closer, texture_closer, color_closer]
-    results_by_metric_total = {key: [0, 0, 0] for key in metrics}
 
-    if c:
-        columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer',
-                   'Color Match Closer']
-    else:
-        columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer']
+    if 'random' in model_type and n != -1:
+        model_type = '{0}_{1}'.format(model_type, n)
+
+    dataset = SilhouetteTriplets(args, stimuli_dir, None)
+    sim_dir = 'results/{0}/{1}'.format(model_type, stimuli_dir)
+
+    # Values for dictionary below: [shape_closer, texture_closer]
+    results_by_metric_total = {key: [0, 0] for key in metrics}
+
+    columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer']
 
     results = pd.DataFrame(index=range(len(metrics)), columns=columns)
-    results.at[:, 'Model'] = model_type
+    results.loc[:, 'Model'] = model_type
+
+    if 'random' in model_type and n == -1:  # Compute averages across random models
+        for i in range(1, N+1):
+            random_df = pd.read_csv('results/{0}_{1}/{2}/proportions_avg.csv'.format(model_type,
+                                                                                     i,
+                                                                                     stimuli_dir))
+            for index, row in random_df.iterrows():
+                metric = row['Metric']
+
+                shape_closer = int(row['Shape Match Closer'])
+                texture_closer = int(row['Texture Match Closer'])
+
+                results_by_metric_total[metric][0] += shape_closer
+                results_by_metric_total[metric][1] += texture_closer
+
+        for i in range(len(metrics)):
+            metric = metrics[i]
+            metric_results = results_by_metric_total[metric]  # [shape_closer, texture_closer, color_closer]
+
+            results.at[i, 'Metric'] = metric
+            results.at[i, 'Shape Match Closer'] = metric_results[0] / N
+            results.at[i, 'Texture Match Closer'] = metric_results[1] / N
+
+        results.to_csv('{0}/proportions_avg.csv'.format(sim_dir), index=False)
+        return
 
     for random_draw in range(num_draws):
         selected_triplets = dataset.select_capped_triplets(random_draw)
         num_rows = 0
-        results_by_metric = {key: [0, 0, 0] for key in metrics}
+        results_by_metric = {key: [0, 0] for key in metrics}
 
-        for file in glob.glob(sim_dir + '*.csv'):
-            if file == sim_dir + 'averages.csv' or file == sim_dir + 'proportions.csv'\
-                    or file == sim_dir + 'matrix.csv' or file == sim_dir + 'proportions_avg.csv'\
-                    or file == sim_dir + 'proportions_OLD.csv':
-                if file == sim_dir + 'proportions_avg.csv':
-                    os.rename(file, sim_dir + 'proportions_OLD.csv')
+        for file in glob.glob('{0}/*.csv'.format(sim_dir)):
+            if file == '{0}/averages.csv'.format(sim_dir) or file == '{0}/proportions.csv'.format(sim_dir)\
+                    or file == '{0}/matrix.csv'.format(sim_dir) or file == '{0}/proportions_avg.csv'.format(sim_dir)\
+                    or file == '{0}/proportions_OLD.csv'.format(sim_dir):
                 continue
 
             df = pd.read_csv(file)
@@ -284,11 +267,8 @@ def calculate_similarity_totals(model_type, c, s, alpha, novel=False, bg=None):
             df2_idx = 0
 
             for index, row in df.iterrows():
-                if c:
-                    triplet = [row['Anchor'], row['Shape Match'] + '.png', row['Texture Match'] + '.png',
-                               row['Color Match'] + '.png']
-                else:
-                    triplet = [row['Anchor'] + '.png', row['Shape Match'] + '.png', row['Texture Match'] + '.png']
+                triplet = ['{0}.png'.format(row['Anchor']), '{0}.png'.format(row['Shape Match']),
+                           '{0}.png'.format(row['Texture Match'])]
 
                 if triplet in selection:
                     df2.loc[df2_idx, :] = row[:]
@@ -303,15 +283,11 @@ def calculate_similarity_totals(model_type, c, s, alpha, novel=False, bg=None):
                 results_by_metric[metric][0] += shape_closer
                 results_by_metric[metric][1] += texture_closer
 
-                if c:
-                    color_closer = int(row['Color Match Closer'])
-                    results_by_metric[metric][2] += color_closer
-
                 num_rows += 1
 
         num_rows = num_rows // len(metrics)  # Each triplet appears len(metric) times.
         for i in range(len(metrics)):
-            for j in range(len(metrics[i])):
+            for j in range(2):
                 results_by_metric_total[metrics[i]][j] += results_by_metric[metrics[i]][j] / num_rows
 
     for i in range(len(metrics)):
@@ -322,95 +298,4 @@ def calculate_similarity_totals(model_type, c, s, alpha, novel=False, bg=None):
         results.at[i, 'Shape Match Closer'] = metric_results[0] / num_draws
         results.at[i, 'Texture Match Closer'] = metric_results[1] / num_draws
 
-        if c:
-            results.at[i, 'Color Match Closer'] = metric_results[2] / num_draws
-
-    results.to_csv(sim_dir + 'proportions_avg.csv', index=False)
-
-
-def shape_bias_rankings(simulation, alpha=1):
-    """This function ranks the models in order of highest shape and texture (and color)
-    bias. Stores the rankings in text files inside the results folder.
-
-    :param simulation: the type of simulation to calculate ranks from. eg. similarity
-                       for Geirhos triplets and cartoon for cartoon dataset quadruplets.
-    :param alpha: controls transparency for silhouette simulations."""
-
-    biases = ['Shape Match Closer', 'Texture Match Closer']
-    bias_titles = {'Shape Match Closer': 'Shape Bias', 'Texture Match Closer': 'Texture Bias'}
-
-    if simulation == 'cartoon':
-        biases.append('Color Match Closer')
-        color_bias_rank = ['/']
-        bias_titles['Color Match Closer'] = 'Color Bias'
-    elif simulation == 'silhouette':
-        simulation = simulation + '_' + str(alpha)
-
-    metrics = ['cos', 'dot', 'ed']
-    metric_titles = {'cos': 'Cosine Similarity', 'dot': 'Dot Product', 'ed': 'Euclidean Distance'}
-
-    ranks = {rank: {metric: ['/'] for metric in metrics} for rank in biases}
-
-    for bias in biases:
-        for i in range(len(metrics)):
-            bias_unsorted = []  # ranks for models that ARE eg. shape biased
-            not_bias_unsorted = []  # ranks for models that ARE NOT eg. shape biased
-
-            for model_dir in glob.glob('results/*/'):
-                if model_dir == 'results/visualizations/':
-                    continue
-                biased = True
-
-                model = model_dir.split('/')[1]
-                props = pd.read_csv(model_dir + simulation + '/proportions_avg.csv')  # DF of proportions
-
-                row = props.iloc[i, :]
-                metric = row['Metric']
-                val = row[bias]
-
-                for other_bias in biases:
-                    if val < row[other_bias]:
-                        biased = False
-                        not_bias_unsorted.append([model, val])
-                        break
-                if biased:
-                    bias_unsorted.append([model, val])
-
-            not_bias_sorted = sorted(not_bias_unsorted, key=lambda m: m[1])
-            for i in range(len(not_bias_sorted)):
-                not_bias_sorted[i] = not_bias_sorted[i][0]
-
-            not_bias_sorted.reverse()
-
-            bias_sorted = sorted(bias_unsorted, key=lambda m: m[1])
-            for i in range(len(bias_sorted)):
-                bias_sorted[i] = bias_sorted[i][0]
-
-            if bias_sorted:
-                for m in bias_sorted:
-                    ranks[bias][metric].insert(0, m)
-
-            if not_bias_sorted:
-                for m in not_bias_sorted:
-                    ranks[bias][metric].append(m)
-
-    for metric in metrics:
-        report_str = 'Model Rankings by {0}\n'.format(metric_titles[metric])
-        report_str += '-----------------------------------------------------\n'
-
-        for bias in biases:
-            report_str += '-{0} Rankings:\n\n'.format(bias_titles[bias])
-            rankings = ranks[bias][metric]
-            j = 0
-
-            for i in range(len(rankings)):
-                m = rankings[i]
-                if m == '/':
-                    j = 1
-                    report_str += '////(models above this line are {0}ed)////\n'.format(bias_titles[bias].lower())
-                else:
-                    report_str += '{0:<3} {1}\n'.format(str(i + 1 - j) + '.', m)
-            report_str += '\n-----------------------------------------------------\n'
-
-        with open('results/' + simulation + '_rankings_' + metric + '.txt', 'w') as f:
-            f.write(report_str)
+    results.to_csv('{0}/proportions_avg.csv'.format(sim_dir), index=False)

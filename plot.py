@@ -4,6 +4,7 @@ import glob
 import pandas as pd
 import json
 import numpy as np
+from main import get_model_list
 
 
 def plot_class_values(categories, class_values, im, shape, texture, model_type):
@@ -61,7 +62,7 @@ def plot_class_values(categories, class_values, im, shape, texture, model_type):
 
     # Plot the image
     im_ax = fig.add_subplot(spec[1])
-    img = plt.imread('stimuli-shape/style-transfer/' + shape + '/' + im)
+    img = plt.imread('stimuli/style-transfer/' + shape + '/' + im)
     plt.imshow(img)
     plt.title(im)
     im_ax.set_xticks([])
@@ -70,7 +71,7 @@ def plot_class_values(categories, class_values, im, shape, texture, model_type):
     plt.savefig('figures/' + model_type + '/' + im)
 
 
-def plot_similarity_histograms(model_type, g, s):
+def plot_similarity_histograms(model_type, s):
     """First plots 6 regular histograms: one set of 2 for cosine similarity between anchor
     images and shape/texture matches, one set of 2 for dot product between anchor images
     and shape/texture matches, and one set of 2 for Euclidean distance between anchor images
@@ -80,16 +81,13 @@ def plot_similarity_histograms(model_type, g, s):
     cos_similarity(anchor, shape match) - cos_similarity(anchor, texture match)).
 
     :param model_type: saycam, resnet50, etc.
-    :param g: true if using the grayscale Geirhos dataset
     :param s: true if using silhouette variant of Geirhos dataset
     """
 
     # NOTE: THIS CODE NEEDS TO BE MADE COMPATIBLE WITH THE NEW CSV FORMAT. DO NOT RUN YET
 
     # Create directory
-    if g:
-        plot_dir = 'figures/' + model_type + '/grayscale'
-    elif s:
+    if s:
         plot_dir = 'figures/' + model_type + '/silhouette'
     else:
         plot_dir = 'figures/' + model_type + '/similarity'
@@ -184,70 +182,7 @@ def plot_similarity_histograms(model_type, g, s):
     plt.savefig(plot_dir + 'difference.png')
 
 
-def plot_norm_histogram(model_type, c, g, s):
-    """Plots a histogram of embedding norms for a given model.
-
-    :param model_type: resnet40, saycam, etc.
-    :param c: True if using the artificial/cartoon stimuli dataset.
-    :param g: True if using the grayscale Geirhos dataset.
-    :param s: True if using silhouette variant of style transfer dataset.
-    """
-
-    # Create directory
-    plot_dir = 'figures/' + model_type + '/embeddings'
-
-    try:
-        os.mkdir(plot_dir)
-    except FileExistsError:
-        pass
-
-    plot_dir += '/norms'
-
-    try:
-        os.mkdir(plot_dir)
-    except FileExistsError:
-        pass
-
-    plot_dir += '/'
-    b = 30  # Number of bins
-
-    # Load embeddings
-    if c:
-        embedding_dir = 'embeddings/' + model_type + '_cartoon.json'
-        fig_dir = plot_dir + model_type + '_cartoon.png'
-        b = 30
-    elif g:
-        embedding_dir = 'embeddings/' + model_type + '_gray.json'
-        fig_dir = plot_dir + model_type + '_gray.png'
-    elif s:
-        embedding_dir = 'embeddings/' + model_type + '_silhouette.json'
-        fig_dir = plot_dir + model_type + '_silhouette.png'
-    else:
-        embedding_dir = 'embeddings/' + model_type + '_embeddings.json'
-        fig_dir = plot_dir + model_type + '.png'
-
-    embeddings = json.load(open(embedding_dir))
-
-    norms = []
-
-    for image in embeddings.keys():
-        e = embeddings[image]
-        norms.append(np.linalg.norm(e))
-
-    plt.style.use('ggplot')
-    fig, ax = plt.subplots()
-
-    fig.set_figheight(6)
-    fig.set_figwidth(9)
-
-    y, x, _ = ax.hist(norms, color='#ff7694', bins=b)
-    plt.title('Histogram of Embedding Norms: ' + model_type)
-    plt.tight_layout()
-
-    plt.savefig(fig_dir)
-
-
-def plot_similarity_bar(g, c, s, alpha, novel=False, bg=None):
+def plot_similarity_bar(s, alpha, novel=False, bg=None):
     """Plots a stacked bar plot of proportion shape/texture/(color) match according to
     similarity across models.
 
@@ -258,25 +193,26 @@ def plot_similarity_bar(g, c, s, alpha, novel=False, bg=None):
     :param novel: true if novel silhouette stimuli are being used.
     :param bg: path to an image to be used as a background for alpha=1.0 silhouette stimuli.
     """
+    c = False
+
+    if alpha == 1:
+        alpha = 1.0
 
     if bg:
         bg_str = '_bg'
     else:
         bg_str = ''
 
-    model_types = ['dino_resnet50', 'mocov2', 'swav', 'clipRN50', 'clipRN50x4', 'clipRN50x16',
-                   'clipViTB32', 'clipViTB16', 'alexnet', 'vgg16', 'resnet50', 'ViTB16', 'saycam', 'saycamA',
+    model_types = ['dino_resnet50', 'swav', 'clipRN50', 'clipRN50x4', 'clipRN50x16',
+                   'clipViTB32', 'clipViTB16', 'alexnet', 'vgg16', 'resnet50', 'ViTB16', 'resnet50_random', 'ViTB16_random', 'saycam', 'saycamA',
                    'saycamS', 'saycamY']
-    model_labels = ['DINO-ResNet50', 'MoCoV2-ResNet50', 'SwAV-ResNet50', 'CLIP-ResNet50',
+    model_labels = ['DINO-ResNet50', 'SwAV-ResNet50', 'CLIP-ResNet50',
                     'CLIP-ResNet50x4', 'CLIP-ResNet50x16', 'CLIP-ViTB/32', 'CLIP-ViTB/16', 'AlexNet',
-                    'VGG-16', 'ResNet-50', 'ViTB/16','ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
+                    'VGG-16', 'ResNet-50', 'ViTB/16', 'Random ResNet-50', 'Random ViTB/16', 'ImageNet SAYCAM', 'SAYCAM-A', 'SAYCAM-S', 'SAYCAM-Y']
 
     if c:
         sub = 'cartoon'
         d = 3
-    elif g:
-        sub = 'grayscale'
-        d = 2
     elif s:
         if novel:
             sub = 'novel_silhouette_' + str(alpha) + bg_str
@@ -360,7 +296,7 @@ def plot_number_of_triplets(c):
     image as an anchor. The plots are organized by anchor image shape, texture, and color
     classes."""
 
-    shape_classes = json.load(open('geirhos_shape_classes.json'))
+    shape_classes = json.load(open('shape_classes/geirhos_shape_classes.json'))
     triplets = json.load(open('geirhos_triplets.json'))
     anchors = shape_classes.keys()
 
@@ -368,7 +304,7 @@ def plot_number_of_triplets(c):
 
     colors = ['#f6eeeb', '#ead5cf', '#c8e0e4', '#7197a0', '#223053', '#755b99', '#fc6c4f', '#bb0a65',
               '#a4da56', '#311f31', '#d9d2e9', '#960206', '#cb020c', '#5b1c1e', '#3a542f', '#a36b32']
-    classes_to_colors = {key.split('/')[2]: None for key in glob.glob('stimuli-shape/style-transfer/*/')}
+    classes_to_colors = {key.split('/')[2]: None for key in glob.glob('stimuli/style-transfer/*/')}
     shape_class_frequencies = {key: 0 for key in classes_to_colors.keys()}
     texture_class_frequencies = {key: 0 for key in classes_to_colors.keys()}
 
@@ -473,15 +409,31 @@ def plot_number_of_triplets(c):
     plt.savefig('figures/anchors_by_texture_class.png')
 
 
-def plot_bias_charts():
-    model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
-                  'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
-                  'ViTB16', 'swav', 'mocov2']
+def plot_bias_charts(classification):
+    """Plots shape bias proportions vs. alpha value (background saliency).
 
-    saycam = ['saycam', 'saycamA', 'saycamS', 'saycamY']
-    supervised = ['resnet50', 'alexnet', 'vgg16', 'ViTB16']
-    self_supervised = ['dino_resnet50', 'swav', 'mocov2']
-    clip_models = ['clipRN50', 'clipRN50x4', 'clipRN50x16', 'clipViTB32', 'clipViTB16']
+    :param classification: True if plotting results from classification simulations.
+                           Otherwise, uses triplet simulations."""
+
+    model_list = get_model_list()
+
+    saycam = ['saycam']
+    supervised = ['resnet50', 'ViTB16', 'resnet50_random', 'ViTB16_random']
+    self_supervised = ['dino_resnet50']
+    clip_models = ['clipViTB16']
+
+    if not classification:
+        class_str = ''
+        sub = '/similarity/'
+        sub2 = '/'
+    else:
+        class_str = '_class'
+        sub = '/classifications/'
+        sub2 = sub
+        model_list.remove('resnet50_random')
+        model_list.remove('ViTB16_random')
+        supervised.remove('resnet50_random')
+        supervised.remove('ViTB16_random')
 
     model_dict = {key: {"0": 0, "0.2":0, "0.4":0, "0.6":0, "0.8":0, "1.0":0} for key in model_list}
 
@@ -490,7 +442,7 @@ def plot_bias_charts():
             if alpha == "0":
                 prop_dir = 'results/' + model + '/similarity/proportions_avg.csv'
             else:
-                prop_dir = 'results/' + model + '/silhouette_' + alpha + '/proportions_avg.csv'
+                prop_dir = 'results/' + model + sub2 + 'silhouette_' + alpha + '/proportions_avg.csv'
 
             props = pd.read_csv(prop_dir)
             shape_bias = props.at[0, 'Shape Match Closer']
@@ -500,6 +452,7 @@ def plot_bias_charts():
     alphas = list(model_dict['saycam'].keys())
 
     # SAYCAM models
+    plt.clf()
     plt.style.use('ggplot')
     plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
     for model in saycam:
@@ -511,7 +464,7 @@ def plot_bias_charts():
     plt.axis((x1, x2, 0, 1))
     plt.legend()
     plt.tight_layout()
-    plt.savefig('saycam_alpha_plot.png')
+    plt.savefig('figures/saycam_alpha_plot' + class_str + '.png')
     plt.clf()
 
     # Supervised models
@@ -526,7 +479,7 @@ def plot_bias_charts():
     plt.axis((x1, x2, 0, 1))
     plt.legend()
     plt.tight_layout()
-    plt.savefig('supervised_alpha_plot.png')
+    plt.savefig('figures/supervised_alpha_plot' + class_str + '.png')
     plt.clf()
 
     # Self-supervised models
@@ -541,7 +494,7 @@ def plot_bias_charts():
     plt.axis((x1, x2, 0, 1))
     plt.legend()
     plt.tight_layout()
-    plt.savefig('self_supervised_alpha_plot.png')
+    plt.savefig('figures/self_supervised_alpha_plot' + class_str + '.png')
     plt.clf()
 
     plt.axhline(0.5, color='r', linestyle='--', label='shape bias threshold')
@@ -554,4 +507,4 @@ def plot_bias_charts():
     plt.axis((x1, x2, 0, 1))
     plt.legend()
     plt.tight_layout()
-    plt.savefig('clip_alpha_plot.png')
+    plt.savefig('figures/clip_alpha_plot' + class_str + '.png')

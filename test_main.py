@@ -1,14 +1,13 @@
 import numpy as np
 from PIL import Image
 
+
 def test_initialize_model():
     from main import initialize_model
 
-    model_list = ['saycam', 'saycamA', 'saycamS', 'saycamY', 'resnet50', 'clipRN50', 'clipRN50x4',
-                  'clipRN50x16', 'clipViTB32', 'clipViTB16', 'dino_resnet50', 'alexnet', 'vgg16',
-                  'swav', 'mocov2']
+    model_list = ['saycam', 'resnet50', 'clipViTB16', 'dino_resnet50']
 
-    embedding_sizes = [2048, 2048, 2048, 2048, 2048, 1024, 640, 768, 512, 512, 2048, 4096, 4096, 2048, 2048]
+    embedding_sizes = [2048, 2048, 512, 2048]
     fake_image = np.uint8(np.random.randint(0, 255, (3, 224, 224)))
     fake_image = Image.fromarray(fake_image, 'RGB')
 
@@ -27,4 +26,3 @@ def test_initialize_model():
 
         print("Running test for {0}...".format(model_type))
         assert embedding_size == embedding.shape[0]
-
