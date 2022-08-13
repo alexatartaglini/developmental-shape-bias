@@ -476,6 +476,67 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
     except FileExistsError:
         pass
 
+    model_type_temp = model_type
+
+    if 'random' in model_type:
+        model_type = '{0}_{1}'.format(model_type, n)
+
+        try:
+            os.mkdir('results/{0}'.format(model_type))
+        except FileExistsError:
+            pass
+
+        if classification:
+            class_str = 'classifications/'
+            try:
+                os.mkdir('results/{0}/classifications'.format(model_type))
+            except FileExistsError:
+                pass
+        else:
+            class_str = ''
+
+        if bg:
+            bg_str = '{0}background_{1}'.format(class_str, bg)
+
+            try:
+                os.mkdir('results/{0}/{1}'.format(model_type, bg_str))
+            except FileExistsError:
+                pass
+
+        try:
+            os.mkdir('results/{0}/{1}{2}'.format(model_type, class_str, stimuli_dir))
+        except FileExistsError:
+            pass
+
+        try:
+            os.mkdir('figures/{0}'.format(model_type))
+        except FileExistsError:
+            pass
+
+        if classification:
+            class_str = 'classifications/'
+            try:
+                os.mkdir('figures/{0}/classifications'.format(model_type))
+            except FileExistsError:
+                pass
+        else:
+            class_str = ''
+
+        if bg:
+            bg_str = '{0}background_{1}'.format(class_str, bg)
+
+            try:
+                os.mkdir('figures/{0}/{1}'.format(model_type, bg_str))
+            except FileExistsError:
+                pass
+
+        try:
+            os.mkdir('figures/{0}/{1}{2}'.format(model_type, class_str, stimuli_dir))
+        except FileExistsError:
+            pass
+
+    model_type = model_type_temp
+
     # Run simulations
     if not classification:
         embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=n)

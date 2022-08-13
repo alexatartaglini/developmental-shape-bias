@@ -233,8 +233,8 @@ def calculate_similarity_totals(args, model_type, stimuli_dir, n=-1, N=0):
             for index, row in random_df.iterrows():
                 metric = row['Metric']
 
-                shape_closer = int(row['Shape Match Closer'])
-                texture_closer = int(row['Texture Match Closer'])
+                shape_closer = row['Shape Match Closer']
+                texture_closer = row['Texture Match Closer']
 
                 results_by_metric_total[metric][0] += shape_closer
                 results_by_metric_total[metric][1] += texture_closer
