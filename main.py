@@ -10,7 +10,7 @@ import json
 import numpy as np
 import pandas as pd
 from data import SilhouetteTriplets
-#from plot import plot_similarity_bar, plot_bias_charts
+from plot import make_plots
 from evaluate import calculate_similarity_totals, csv_class_values, calculate_totals, calculate_proportions, get_num_draws
 import clip
 import probabilities_to_decision
@@ -22,8 +22,10 @@ logging.set_verbosity_error()  # Suppress warnings from Hugging Face
 # code for the new models will need to be added to the initialize_model
 # and get_embeddings functions. Furthermore, styles will need to be
 # added to the plotting functions (eg. marker shape, line color, etc.)
-model_list = ['saycam', 'resnet50', 'clipViTB16', 'dino_resnet50',
-              'ViTB16', 'resnet50_random', 'ViTB16_random']
+model_list = ['resnet50', 'resnet50_random', 'ViTB16', 'ViTB16_random',
+              'dino_resnet50', 'clipViTB16', 'saycamS']
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class LinearClassifier(nn.Module):
@@ -147,14 +149,14 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
 
                 # Pass image into model
                 if model_type == 'clipViTB16':
-                    embedding = penult_model.encode_image(im)
+                    embedding = penult_model.encode_image(im.to(device)).cpu()
                     embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
                 elif model_type == 'ViTB16' or 'ViTB16_random' in model_type:
-                    im['pixel_values'] = im['pixel_values'].squeeze(0)
-                    outputs = penult_model(**im)
+                    im['pixel_values'] = im['pixel_values'].to(device).squeeze(0)
+                    outputs = penult_model(**im).cpu()
                     embedding = outputs.last_hidden_state.squeeze(0)[0, :]
                 else:
-                    embedding = penult_model(im).numpy().squeeze()
+                    embedding = penult_model(im.to(device)).cpu().numpy().squeeze()
 
                 embeddings[name] = embedding.tolist()
 
@@ -357,6 +359,9 @@ def initialize_model(model_type, n=-1):
     elif model_type == 'clipViTB16':
         penult_model = model
 
+    model = model.to(device)
+    penult_model = penult_model.to(device)
+
     return model, penult_model, transform
 
 
@@ -412,7 +417,6 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
     :param n: for use when model_type = resnet50_random or ViTB16_random. Specifies
               which particular random model to use."""
 
-    #plot = args.plot
     classification = args.classification
     bg = args.bg
 
@@ -460,6 +464,12 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             os.mkdir('figures/{0}/classifications'.format(model_type))
         except FileExistsError:
             pass
+
+        if args.all_models:
+            try:
+                os.mkdir('figures/classifications')
+            except FileExistsError:
+                pass
     else:
         class_str = ''
 
@@ -470,6 +480,12 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             os.mkdir('figures/{0}/{1}'.format(model_type, bg_str))
         except FileExistsError:
             pass
+
+        if args.all_models:
+            try:
+                os.mkdir('figures/{0}'.format(bg_str))
+            except FileExistsError:
+                pass
 
     try:
         os.mkdir('figures/{0}/{1}{2}'.format(model_type, class_str, stimuli_dir))
@@ -551,8 +567,6 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
 
             df.to_csv(path, index=False)
 
-        # TODO: PLOTTING CODE INSERTED FOR INDIVIDUAL MODEL PLOTS eg. geirhos style charts
-
     else:  # Run simulations in the style of Geirhos et al.; ie., obtain classifications
         result_dir = 'results/{0}/{1}{2}'.format(model_type, class_str, stimuli_dir)
 
@@ -627,7 +641,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model', help='Example: saycam, resnet50', required=False, default='saycam')
-    parser.add_argument('-p', '--plot', help='Plots results.', required=False, action='store_true')
+    parser.add_argument('-p', '--plot', help='Plots results for either: shape bias vs. (alpha),'
+                                             'shape bias vs. (size) & alignment. Enter (alpha_random) or'
+                                             '(size_random) to make the plot for N random models. Set the '
+                                             '--all_models flag to make one plot with all models.',
+                        required=False, default=None)
     parser.add_argument('--classification', help='Obtains classification decisions. Otherwise, obtains similarities '
                                                  'for triplets of images (default).', required=False,
                         action='store_true')
@@ -645,6 +663,7 @@ if __name__ == '__main__':
     parser.add_argument('--new_seed', help='Generates a new collection of randomly selected triplets to use in the '
                                            'calculation of similarity shape/texture bias proportions.', required=False,
                         action='store_true')
+    parser.add_argument('--N', help='Number of random models to average results over.', required=False, default=10)
     args = parser.parse_args()
 
     model = args.model
@@ -658,7 +677,7 @@ if __name__ == '__main__':
     all_models = args.all_models
     new_seed = args.new_seed
 
-    N = 10  # number of random models to test and average over
+    N = args.N  # number of random models to test and average over
 
     # Do not classify novel stimuli
     assert not (novel and classification)
@@ -713,8 +732,10 @@ if __name__ == '__main__':
     if new_seed or not os.path.exists('seed.json') or not os.path.exists('novel_seed.json'):
         new_seed(args, stimuli_dir)
 
-    if all_models:
-        if not plot:
+    if plot:
+        make_plots(args)
+    else:
+        if all_models:
             for model_type in model_list:
                 print("Running simulations for {0}...".format(model_type))
 
@@ -728,19 +749,15 @@ if __name__ == '__main__':
 
                 if not classification:
                     calculate_similarity_totals(args, model_type, stimuli_dir, N=N)
-        else:
-            #plot_similarity_bar(s, alpha, novel=novel, bg=bg)
-            #plot_bias_charts(classification)
-            print('hi')
 
-    else:
-        if 'random' in model:
-            for i in range(1, N + 1):
-                print('{0}_{1}...'.format(model, i))
-                run_simulations(args, model, stimuli_dir, n=i)
-                calculate_similarity_totals(args, model, stimuli_dir, n=i)
         else:
-            run_simulations(args, model, stimuli_dir)
+            if 'random' in model:
+                for i in range(1, N + 1):
+                    print('{0}_{1}...'.format(model, i))
+                    run_simulations(args, model, stimuli_dir, n=i)
+                    calculate_similarity_totals(args, model, stimuli_dir, n=i)
+            else:
+                run_simulations(args, model, stimuli_dir)
 
-        if not classification:
-            calculate_similarity_totals(args, model, stimuli_dir, N=N)
+            if not classification:
+                calculate_similarity_totals(args, model, stimuli_dir, N=N)
