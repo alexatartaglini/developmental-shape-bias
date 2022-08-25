@@ -265,17 +265,17 @@ class SilhouetteTriplets(Dataset):
                 y = randint(0, bound)
                 texture = texture.crop((x, y, x + mask.size[0], y + mask.size[0]))
 
-                base = Image.new('RGB', mask.size, (255, 255, 255))
+                base = Image.new('RGBA', mask.size, (255, 255, 255, 0))
                 base.paste(texture, mask=mask.split()[3])
 
                 if self.unaligned:
                     bound = bg.size[0] - mask.size[0]
                     x = randint(0, bound)  # not shape aligned when uncommented
                     y = randint(0, bound)  # not shape aligned when uncommented
-                    bg.paste(base, (x, y))
+                    bg.paste(base.convert('RGB'), (x, y), mask=base)
                 else:
                     x = (224 - self.stimulus_size[0]) // 2  # shape aligned if uncommented
-                    bg.paste(base, (x, x))
+                    bg.paste(base.convert('RGB'), (x, x), mask=base)
 
                 bg.save(im_path)
 
@@ -295,21 +295,20 @@ class SilhouetteTriplets(Dataset):
                 texture_path = 'stimuli/geirhos-alpha0.0-size100-aligned/{0}'.format(self.shape_classes[im_name]['dir'])
                 texture = Image.open(texture_path)
 
-                base = Image.new('RGB', mask.size, (255, 255, 255))
+                base = Image.new('RGBA', mask.size, (255, 255, 255, 0))
                 base.paste(texture, mask=mask.split()[3])
 
                 # Resize
                 if self.percent != '100':
                     base = base.resize(self.stimulus_size)
-
                 if self.unaligned:
                     bound = bg.size[0] - self.stimulus_size[0]
                     x = randint(0, bound)
                     y = randint(0, bound)
-                    bg.paste(base, (x, y))
+                    bg.paste(base.convert('RGB'), (x, y), mask=base)
                 else:
                     x = (224 - self.stimulus_size[0]) // 2  # shape aligned if uncommented
-                    bg.paste(base, (x, x))
+                    bg.paste(base.convert('RGB'), (x, x), mask=base)
 
                 bg.save(im_path)
 

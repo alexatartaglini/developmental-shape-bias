@@ -1,8 +1,10 @@
 import sys
 import torch
 import torch.nn as nn
+from PIL import Image
 from torchvision import models, transforms
 from transformers import ViTFeatureExtractor, ViTForImageClassification, ViTModel, logging, ViTConfig
+import transformers
 from torch.utils.data import DataLoader
 import argparse
 import os
@@ -15,6 +17,7 @@ from evaluate import calculate_similarity_totals, csv_class_values, calculate_to
 import clip
 import probabilities_to_decision
 from random import sample
+import glob
 logging.set_verbosity_error()  # Suppress warnings from Hugging Face
 
 
@@ -89,7 +92,7 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
-    file (model_type_embeddings.json)
+    file (embeddings/model_type/stimuli_dir.json)
 
     :param args: command line arguments
     :param stimuli_dir: path of the dataset
@@ -121,6 +124,9 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
         pass
 
     if bg:
+        if '/' in bg:
+            bg = bg.split('/')[-1]
+
         bg_str = 'background_{0}'.format(bg)
 
         try:
@@ -153,8 +159,82 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
                     embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
                 elif model_type == 'ViTB16' or 'ViTB16_random' in model_type:
                     im['pixel_values'] = im['pixel_values'].to(device).squeeze(0)
-                    outputs = penult_model(**im).cpu()
-                    embedding = outputs.last_hidden_state.squeeze(0)[0, :]
+                    outputs = penult_model(**im)
+                    embedding = outputs.last_hidden_state.squeeze(0)[0, :].cpu()
+                else:
+                    embedding = penult_model(im.to(device)).cpu().numpy().squeeze()
+
+                embeddings[name] = embedding.tolist()
+
+        with open(embedding_dir, 'w') as file:
+            json.dump(embeddings, file)
+
+        return embeddings
+
+
+def get_icon_embeddings(model_type, penult_model, transform, n=-1):
+    """ Retrieves embeddings for each Geirhos icom image from the penultimate
+    layer of a given model. Stores the embeddings in a dictionary (indexed by
+    icon name, eg. cat.png). Returns the dictionary and stores it in a json
+    file (embeddings/model_type/icons.json)
+
+    :param model_type: the type of model, eg. saycam, resnet50, etc.
+    :param penult_model: the model with the last layer removed.
+    :param transform: appropriate transforms for the given model (should match training
+        data stats)
+    :param n: for use when model_type = resnet50_random or ViTB16_random. Specifies
+              which particular random model to use.
+
+    :return: a dictionary indexed by image name that contains the embeddings for
+        all images in a dataset extracted from the penultimate layer of a given
+        model.
+    """
+
+    if 'random' in model_type:
+        model_type = '{0}_{1}'.format(model_type, n)
+
+    try:
+        os.mkdir('embeddings')
+    except FileExistsError:
+        pass
+
+    try:
+        os.mkdir('embeddings/{0}'.format(model_type))
+    except FileExistsError:
+        pass
+
+    embedding_dir = 'embeddings/{0}/icons.json'.format(model_type)
+
+    try:
+        embeddings = json.load(open(embedding_dir))
+        return embeddings
+
+    except FileNotFoundError:  # Retrieve and store embeddings
+        # Initialize dictionary
+        embeddings = {}
+        icon_files = glob.glob('stimuli/geirhos-icons/*')
+
+        with torch.no_grad():
+            for icon_file in icon_files:
+                im = Image.open(icon_file).convert('RGB')
+                name = icon_file.split('/')[-1]
+
+                if transform:
+                    if type(transform) == transformers.models.vit.feature_extraction_vit.ViTFeatureExtractor:
+                        im = transform(images=im, return_tensors="pt")
+                        im['pixel_values'] = im['pixel_values'].unsqueeze(0)
+                    else:
+                        im = transform(im)
+                        im = im.unsqueeze(0)
+
+                # Pass image into model
+                if model_type == 'clipViTB16':
+                    embedding = penult_model.encode_image(im.to(device)).cpu()
+                    embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
+                elif model_type == 'ViTB16' or 'ViTB16_random' in model_type:
+                    im['pixel_values'] = im['pixel_values'].to(device).squeeze(0)
+                    outputs = penult_model(**im)
+                    embedding = outputs.last_hidden_state.squeeze(0)[0, :].cpu()
                 else:
                     embedding = penult_model(im.to(device)).cpu().numpy().squeeze()
 
@@ -304,8 +384,13 @@ def initialize_model(model_type, n=-1):
         model.fc = nn.Linear(in_features=2048, out_features=1000, bias=True)
         model = nn.DataParallel(model)
         checkpoint = torch.load('models/fz_IN_resnext50_32x4d_augmentation_True_SAY_5_288.tar',
-                                map_location=torch.device('cpu'))
+                                map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
+    elif model_type == 'saycamS':
+        model = models.resnext50_32x4d(pretrained=False)
+        model = nn.DataParallel(model)
+        checkpoint = torch.load('models/TC-S.tar', map_location=torch.device('cpu'))
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     elif model_type == 'resnet50':
         model = models.resnet50(pretrained=True)
     elif model_type == 'resnet50_random':
@@ -316,11 +401,11 @@ def initialize_model(model_type, n=-1):
         except FileNotFoundError:
             torch.save(model.state_dict(), 'models/resnet50_random_{0}.pth'.format(n))
     elif model_type == 'clipViTB16':
-        model, transform = clip.load('ViT-B/16', device='cpu')
+        model, transform = clip.load('ViT-B/16', device=device)
     elif model_type == 'dino_resnet50':
         model = models.resnet50(pretrained=False)
         checkpoint = torch.load('models/dino_resnet50_linearweights.pth',
-                                map_location=torch.device('cpu'))['state_dict']
+                                map_location=device)['state_dict']
         checkpoint = {k.replace("module.", ""): v for k, v in checkpoint.items()}
         linear_classifier = LinearClassifier(model.fc.weight.shape[1], num_labels=1000)
         linear_classifier.load_state_dict(checkpoint)
@@ -350,7 +435,7 @@ def initialize_model(model_type, n=-1):
     model.eval()
 
     # Remove the final layer from the model
-    if model_type == 'saycam':
+    if model_type == 'saycam' or model_type == 'saycamS':
         modules = list(model.module.children())[:-1]
         penult_model = nn.Sequential(*modules)
     elif model_type == 'resnet50' or model_type == 'resnet50_random':
@@ -418,6 +503,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
               which particular random model to use."""
 
     classification = args.classification
+    icons = args.icons
     bg = args.bg
 
     clip_list = ['clipViTB16']
@@ -437,11 +523,20 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             os.mkdir('results/{0}/classifications'.format(model_type))
         except FileExistsError:
             pass
+    elif icons:
+        class_str = 'icons/'
+        try:
+            os.mkdir('results/{0}/icons'.format(model_type))
+        except FileExistsError:
+            pass
     else:
         class_str = ''
 
     if bg:
-        bg_str = '{0}background_{1}'.format(class_str, bg)
+        if '/' in bg:
+            bg = bg.split('/')[-1]
+
+        bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
 
         try:
             os.mkdir('results/{0}/{1}'.format(model_type, bg_str))
@@ -470,11 +565,26 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
                 os.mkdir('figures/classifications')
             except FileExistsError:
                 pass
+    elif icons:
+        class_str = 'icons/'
+        try:
+            os.mkdir('figures/{0}/icons'.format(model_type))
+        except FileExistsError:
+            pass
+
+        if args.all_models:
+            try:
+                os.mkdir('figures/icons')
+            except FileExistsError:
+                pass
     else:
         class_str = ''
 
     if bg:
-        bg_str = '{0}background_{1}'.format(class_str, bg)
+        if '/' in bg:
+            bg = bg.split('/')[-1]
+
+        bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
 
         try:
             os.mkdir('figures/{0}/{1}'.format(model_type, bg_str))
@@ -508,11 +618,20 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
                 os.mkdir('results/{0}/classifications'.format(model_type))
             except FileExistsError:
                 pass
+        elif icons:
+            class_str = 'icons/'
+            try:
+                os.mkdir('results/{0}/icons'.format(model_type))
+            except FileExistsError:
+                pass
         else:
             class_str = ''
 
         if bg:
-            bg_str = '{0}background_{1}'.format(class_str, bg)
+            if '/' in bg:
+                bg = bg.split('/')[-1]
+
+            bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
 
             try:
                 os.mkdir('results/{0}/{1}'.format(model_type, bg_str))
@@ -535,11 +654,20 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
                 os.mkdir('figures/{0}/classifications'.format(model_type))
             except FileExistsError:
                 pass
+        elif icons:
+            class_str = 'icons/'
+            try:
+                os.mkdir('figures/{0}/icons'.format(model_type))
+            except FileExistsError:
+                pass
         else:
             class_str = ''
 
         if bg:
-            bg_str = '{0}background_{1}'.format(class_str, bg)
+            if '/' in bg:
+                bg = bg.split('/')[-1]
+
+            bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
 
             try:
                 os.mkdir('figures/{0}/{1}'.format(model_type, bg_str))
@@ -554,9 +682,12 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
     model_type = model_type_temp
 
     # Run simulations
-    if not classification:
-        embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=n)
+    if icons:
+        #embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=n)
+        icon_embeddings = get_icon_embeddings(model_type, penult_model, transform, n=n)
 
+    elif not classification:
+        embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=n)
         results = triplets(args, model_type, stimuli_dir, embeddings, n=n)
 
         # Convert result DataFrames to CSV files
@@ -649,12 +780,14 @@ if __name__ == '__main__':
     parser.add_argument('--classification', help='Obtains classification decisions. Otherwise, obtains similarities '
                                                  'for triplets of images (default).', required=False,
                         action='store_true')
+    parser.add_argument('--icons', help='Compare input images to class icons provided by Geirhos et al.',
+                        required=False, action='store_true')
     parser.add_argument('--percent_size', help='Controls the size of the stimuli.', required=False, default='100')
     parser.add_argument('--unaligned', help='Randomly place the stimuli. Otherwise, stimuli are placed'
                                             'in the center of the image.', required=False, action='store_true')
     parser.add_argument('--novel', help='Uses novel shape/texture stimuli triplets. This flag must be used with '
                                         'the -s flag.', required=False, action='store_true')
-    parser.add_argument('--bg', help='Runs silhouette triplet simulations (-s, -t) using stimuli with an image '
+    parser.add_argument('--bg', help='Runs silhouette triplet simulations using stimuli with an image '
                                      'background.', required=False, default=None)
     parser.add_argument('--alpha', help='Transparency value for silhouette triplets. 1=no background texture info.'
                                         '0=original Geirhos stimuli.', default=1, type=float)
@@ -669,6 +802,7 @@ if __name__ == '__main__':
     model = args.model
     plot = args.plot
     classification = args.classification
+    icons = args.icons
     percent = args.percent_size
     unaligned = args.unaligned
     novel = args.novel
@@ -704,7 +838,10 @@ if __name__ == '__main__':
         pass
 
     if bg:
-        bg_str = 'background_{0}/'.format(bg)
+        if '/' in bg:
+            bg = bg.split('/')[-1]
+
+        bg_str = 'background_{0}/'.format(bg[:-4])
 
         try:
             os.mkdir('stimuli/{0}'.format(bg_str))
@@ -743,11 +880,11 @@ if __name__ == '__main__':
                     for i in range(1, N+1):
                         print('\t{0}_{1}...'.format(model_type, i))
                         run_simulations(args, model_type, stimuli_dir, n=i)
-                        calculate_similarity_totals(args, model_type, stimuli_dir, n=i)
+                        #calculate_similarity_totals(args, model_type, stimuli_dir, n=i)
                 else:
                     run_simulations(args, model_type, stimuli_dir)
 
-                if not classification:
+                if not classification and not icons:
                     calculate_similarity_totals(args, model_type, stimuli_dir, N=N)
 
         else:
