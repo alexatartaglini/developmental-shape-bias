@@ -67,7 +67,7 @@ def plot_bias_vs_alpha(args, random=False):
         class_str = ''
 
     if args.bg:
-        bg_str = 'background_{0}/'.format(args.bg)
+        bg_str = 'background_{0}/'.format(args.bg.split('/')[-1][:-4])
     else:
         bg_str = ''
 
@@ -123,6 +123,7 @@ def plot_bias_vs_alpha(args, random=False):
 
     for i in reversed(range(len(model_list))):
         model = model_list[i]
+
         if random:
             plt.plot(alphas, list(model_dict[model].values()), color=colors[i],
                      label=labels[i], marker='o', markersize=7.5,
@@ -196,7 +197,7 @@ def plot_bias_vs_size(args, random=False):
         class_str = ''
 
     if args.bg:
-        bg_str = 'background_{0}/'.format(args.bg)
+        bg_str = 'background_{0}/'.format(args.bg.split('/')[-1][:-4])
     else:
         bg_str = ''
 
@@ -250,7 +251,6 @@ def plot_bias_vs_size(args, random=False):
                 prop_dir = 'results/{0}/{1}{2}{3}-alpha1-size{4}{5}/' \
                            'proportions_avg.csv'.format(model, class_str, bg_str,
                                                         sim_dir, size, alignment)
-
                 props = pd.read_csv(prop_dir)
                 shape_bias = props.at[0, 'Shape Match Closer']
                 model_dict[model][alignment][str(size)] = shape_bias
@@ -262,7 +262,12 @@ def plot_bias_vs_size(args, random=False):
         alignment = alignments[a]
         label = alignment_labels[a]
 
-        for i in reversed(range(len(model_list))):
+        i_range = [6, 5, 4, 3, 2, 1, 0]  # ToDo: replace this once bug is fixed
+        i_range2 = [0, 1, 2, 3, 4, 5, 6]
+
+        for i in i_range:
+            model = model_list[i]
+
             if random:
                 plt.plot(percent_ints, list(model_dict[model][alignment].values()),
                          label=labels[i], color=colors[i], marker=markers[i],
@@ -282,9 +287,14 @@ def plot_bias_vs_size(args, random=False):
         plt.axis((x1, x2, 0, 1))
 
         handles, labels = plt.gca().get_legend_handles_labels()
-        plt.legend([handles[idx] for idx in reversed(range(len(model_list)))],
-                   [labels[idx] for idx in range(len(model_list))],
-                   prop={'size': 8})
+        if alignment == '-unaligned':
+            plt.legend([handles[idx] for idx in i_range],
+                       [labels[idx] for idx in i_range],
+                       prop={'size': 8})
+        else:
+            plt.legend([handles[idx] for idx in i_range],
+                       [labels[idx] for idx in i_range2],
+                       prop={'size': 8})
 
         if random:
             plt.savefig('{0}/random_bias_vs_size_{1}_{2}.png'.format(plot_dir, sim_dir,

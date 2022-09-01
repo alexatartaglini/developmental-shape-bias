@@ -262,7 +262,7 @@ def calculate_similarity_totals(args, model_type, stimuli_dir, n=-1, N=0):
                 continue
 
             df = pd.read_csv(file)
-            selection = selected_triplets[file.split('/')[3].replace('csv', 'png')]
+            selection = selected_triplets[file.split('/')[-1].replace('csv', 'png')]
             df2 = pd.DataFrame(columns=df.columns, index=range(dataset.max_num_triplets()))
             df2_idx = 0
 

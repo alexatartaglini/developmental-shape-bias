@@ -127,7 +127,7 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
         if '/' in bg:
             bg = bg.split('/')[-1]
 
-        bg_str = 'background_{0}'.format(bg)
+        bg_str = 'background_{0}'.format(bg[:-4])
 
         try:
             os.mkdir('embeddings/{0}/{1}'.format(model_type, bg_str))
@@ -508,9 +508,6 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
 
     clip_list = ['clipViTB16']
 
-    # Initialize the model and put in evaluation mode; retrieve transforms
-    model, penult_model, transform = initialize_model(model_type, n=n)
-
     # Create directories for results and plots
     try:
         os.mkdir('results/{0}'.format(model_type))
@@ -601,6 +598,12 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
         os.mkdir('figures/{0}/{1}{2}'.format(model_type, class_str, stimuli_dir))
     except FileExistsError:
         pass
+
+    if args.plot:
+        return
+
+    # Initialize the model and put in evaluation mode; retrieve transforms
+    model, penult_model, transform = initialize_model(model_type, n=n)
 
     model_type_temp = model_type
 
@@ -797,6 +800,10 @@ if __name__ == '__main__':
                                            'calculation of similarity shape/texture bias proportions.', required=False,
                         action='store_true')
     parser.add_argument('--N', help='Number of random models to average results over.', required=False, default=10)
+    parser.add_argument('--create_stimuli', help='Creates stimuli with given settings without running'
+                                                 'simulations.', action='store_true', default=False)
+    parser.add_argument('--calculate', help='Calculate results without running new simulations.', required=False,
+                        action='store_true', default=False)
     args = parser.parse_args()
 
     model = args.model
@@ -810,6 +817,8 @@ if __name__ == '__main__':
     alpha = args.alpha
     all_models = args.all_models
     new_seed = args.new_seed
+    create_stimuli = args.create_stimuli
+    calculate = args.calculate
 
     N = args.N  # number of random models to test and average over
 
@@ -870,7 +879,10 @@ if __name__ == '__main__':
         new_seed(args, stimuli_dir)
 
     if plot:
+        run_simulations(args, 'resnet50', stimuli_dir)
         make_plots(args)
+    elif create_stimuli:
+        dataset = SilhouetteTriplets(args, stimuli_dir, None)
     else:
         if all_models:
             for model_type in model_list:
@@ -879,10 +891,12 @@ if __name__ == '__main__':
                 if 'random' in model_type:
                     for i in range(1, N+1):
                         print('\t{0}_{1}...'.format(model_type, i))
-                        run_simulations(args, model_type, stimuli_dir, n=i)
-                        #calculate_similarity_totals(args, model_type, stimuli_dir, n=i)
+                        if not calculate:
+                            run_simulations(args, model_type, stimuli_dir, n=i)
+                        calculate_similarity_totals(args, model_type, stimuli_dir, n=i)
                 else:
-                    run_simulations(args, model_type, stimuli_dir)
+                    if not calculate:
+                        run_simulations(args, model_type, stimuli_dir)
 
                 if not classification and not icons:
                     calculate_similarity_totals(args, model_type, stimuli_dir, N=N)
@@ -891,10 +905,12 @@ if __name__ == '__main__':
             if 'random' in model:
                 for i in range(1, N + 1):
                     print('{0}_{1}...'.format(model, i))
-                    run_simulations(args, model, stimuli_dir, n=i)
+                    if not calculate:
+                        run_simulations(args, model, stimuli_dir, n=i)
                     calculate_similarity_totals(args, model, stimuli_dir, n=i)
             else:
-                run_simulations(args, model, stimuli_dir)
+                if not calculate:
+                    run_simulations(args, model, stimuli_dir)
 
             if not classification:
                 calculate_similarity_totals(args, model, stimuli_dir, N=N)
