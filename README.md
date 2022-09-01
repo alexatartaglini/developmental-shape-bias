@@ -1,1 +1,1 @@
-# Learning a Shape Bias on the SAYCAM Dataset
+# A developmentally-inspired shape vs. texture bias test for neural networks
