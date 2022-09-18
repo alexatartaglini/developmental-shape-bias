@@ -48,7 +48,10 @@ class SilhouetteTriplets(Dataset):
         self.bg = args.bg
         self.novel = args.novel
         self.alpha = int(args.alpha * 255)
-        self.alpha_str = str(args.alpha)
+        if args.alpha == 1:
+            self.alpha_str = '1'
+        else:
+            self.alpha_str = str(args.alpha)
         self.stimuli_dir = stimuli_dir
         self.percent = args.percent_size
         self.stimulus_size = sizes[percents.index(self.percent)]
