@@ -1,6 +1,6 @@
 import os
 from torch.utils.data import Dataset
-from PIL import Image
+from PIL import Image, ImageFilter
 import json
 import glob
 import warnings
@@ -29,7 +29,7 @@ class SilhouetteTriplets(Dataset):
     This class can also generate stimuli with any alpha, size, or background setting.
     """
 
-    def __init__(self, args, stimuli_dir, transform):
+    def __init__(self, args, stimuli_dir, transform, displace_bg=False, override=False):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
@@ -39,8 +39,10 @@ class SilhouetteTriplets(Dataset):
         :param transform: a set of image transformations. NOTE: if the model being used is
                           ViTB16, this will actually be the feature extractor object, which
                           performs transforms on images for this model.
+        :param displace_bg: randomly select a patch of the background image to serve as the
+                            stimulus background. If False, the entire image is used.
+        :param override: if True, will replace the stimuli that already exist.
         """
-
         self.shape_classes = {}
         self.all_triplets = []
         self.triplets_by_image = {}
@@ -52,10 +54,20 @@ class SilhouetteTriplets(Dataset):
             self.alpha_str = '1'
         else:
             self.alpha_str = str(args.alpha)
+        self.blur = args.blur
+        if self.blur == 0:
+            self.blur_str = ''
+        else:
+            self.blur_str = '_{0}'.format(str(self.blur))
         self.stimuli_dir = stimuli_dir
         self.percent = args.percent_size
         self.stimulus_size = sizes[percents.index(self.percent)]
         self.unaligned = args.unaligned
+        if self.bg and ('brodatz' in self.bg or 'saycam' in self.bg):
+            self.displace_bg = True
+        else:
+            self.displace_bg = displace_bg
+        self.override = override
 
         shape_dir = 'stimuli/{0}'.format(self.stimuli_dir)
 
@@ -195,11 +207,13 @@ class SilhouetteTriplets(Dataset):
 
     def create_silhouette_stimuli(self):
         """Create and save the silhouette stimuli if they do not already exist."""
-
         try:
             os.mkdir('stimuli/{0}'.format(self.stimuli_dir))
         except FileExistsError:
-            return
+            if self.override:
+                pass
+            else:
+                return
 
         if self.novel:
             mask_dir = 'stimuli/novel-masks'
@@ -207,6 +221,7 @@ class SilhouetteTriplets(Dataset):
             mask_dir = 'stimuli/geirhos-masks'
 
         for im_name in self.shape_classes.keys():
+
             try:
                 os.mkdir('stimuli/{0}/{1}'.format(self.stimuli_dir,
                                                   self.shape_classes[im_name]['shape']))
@@ -224,30 +239,30 @@ class SilhouetteTriplets(Dataset):
             mask = Image.open(mask_path).convert('RGBA')
 
             if self.bg:
-                bg = Image.open(self.bg).convert('RGB').resize((224, 224), Image.NEAREST)
+                if self.displace_bg:
+                    bg = Image.open(self.bg).convert('RGB').resize((mask.size[0] * 2, mask.size[0] * 2), Image.NEAREST)
+                    x = randint(0, 224)
+                    y = randint(0, 224)
+                    bg = bg.crop((x, y, x + mask.size[0], y + mask.size[0])).filter(ImageFilter.SHARPEN)
+                else:
+                    bg = Image.open(self.bg).convert('RGB').resize((224, 224), Image.NEAREST)
+
+                if self.blur != 0:
+                    bg = bg.filter(ImageFilter.GaussianBlur(radius=self.blur))
             else:
                 bg = Image.new('RGB', (224, 224), (255, 255, 255))
 
             if self.novel:
-                # Resize mask if necessary
-                if self.percent != '100':
-                    base = Image.new('RGBA', mask.size, (255, 255, 255, 255))
-                    mask_resized = mask.resize(self.stimulus_size, Image.NEAREST)
+                texture_path = 'stimuli/brodatz-textures/{0}.png'.format(self.shape_classes[im_name]['texture'])
+                texture = Image.open(texture_path).resize((mask.size[0] * 2, mask.size[0] * 2))
 
-                    img_w, img_h = mask_resized.size
-                    bg_w, bg_h = base.size
-                    offset = ((bg_w - img_w) // 2, (bg_h - img_h) // 2)
+                # Attain a randomly selected patch of texture
+                bound = texture.size[0] - mask.size[0]
+                x = randint(0, bound)
+                y = randint(0, bound)
+                texture = texture.crop((x, y, x + mask.size[0], y + mask.size[0]))
 
-                    base.paste(mask_resized, offset)
-                    mask = base
-
-                    width, height = mask.size
-
-                    x = (width - self.stimulus_size[0]) // 2
-                    y = (height - self.stimulus_size[0]) // 2
-
-                    mask = mask.crop((x, y, x + self.stimulus_size[0], y + self.stimulus_size[0]))
-
+                # Place mask over texture
                 mask_data = mask.getdata()
 
                 new_data = []
@@ -259,20 +274,35 @@ class SilhouetteTriplets(Dataset):
 
                 mask.putdata(new_data)
 
-                texture_path = 'stimuli/brodatz-textures/{0}.png'.format(self.shape_classes[im_name]['texture'])
-                texture = Image.open(texture_path)
-
-                # Attain a randomly selected patch of texture
-                bound = texture.size[0] - self.stimulus_size[0]
-                x = randint(0, bound)
-                y = randint(0, bound)
-                texture = texture.crop((x, y, x + mask.size[0], y + mask.size[0]))
-
                 base = Image.new('RGBA', mask.size, (255, 255, 255, 0))
                 base.paste(texture, mask=mask.split()[3])
 
+                # Resize stimulus if necessary
+                if self.percent != '100':
+                    resized = base.resize(self.stimulus_size, Image.NEAREST)
+                    base = Image.new('RGBA', mask.size, (255, 255, 255, 255))
+
+                    img_w, img_h = resized.size
+                    bg_w, bg_h = base.size
+                    offset = ((bg_w - img_w) // 2, (bg_h - img_h) // 2)
+
+                    base.paste(resized, offset)
+                    base = base.crop((offset[0], offset[1],
+                                      offset[0] + self.stimulus_size[0],
+                                      offset[1] + self.stimulus_size[0]))
+                    '''
+                    mask = base
+
+                    width, height = mask.size
+
+                    x = (width - self.stimulus_size[0]) // 2
+                    y = (height - self.stimulus_size[0]) // 2
+
+                    mask = mask.crop((x, y, x + self.stimulus_size[0], y + self.stimulus_size[0]))
+                    '''
+
                 if self.unaligned:
-                    bound = bg.size[0] - mask.size[0]
+                    bound = bg.size[0] - base.size[0]
                     x = randint(0, bound)  # not shape aligned when uncommented
                     y = randint(0, bound)  # not shape aligned when uncommented
                     bg.paste(base.convert('RGB'), (x, y), mask=base)
@@ -295,7 +325,12 @@ class SilhouetteTriplets(Dataset):
 
                 mask.putdata(new_data)
 
-                texture_path = 'stimuli/geirhos-alpha0.0-size100-aligned/{0}'.format(self.shape_classes[im_name]['dir'])
+                if not self.bg:
+                    texture_path = 'stimuli/geirhos-alpha0.0-size100-aligned/{0}'.format(
+                        self.shape_classes[im_name]['dir'])
+                else:
+                    texture_path = 'stimuli/geirhos-alpha1-size100-aligned/{0}'.format(
+                        self.shape_classes[im_name]['dir'])
                 texture = Image.open(texture_path)
 
                 base = Image.new('RGBA', mask.size, (255, 255, 255, 0))

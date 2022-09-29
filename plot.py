@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
 
 def get_model_list():
@@ -17,7 +18,10 @@ def make_plots(args):
     if plot == 'alpha':
         plot_bias_vs_alpha(args)
     elif plot == 'size':
-        plot_bias_vs_size(args)
+        if args.bg_match:
+            plot_bg_match_bar_charts(args)
+        else:
+            plot_bias_vs_size(args)
     elif plot == 'alpha_random':
         plot_bias_vs_alpha(args, random=True)
     elif plot == 'size_random':
@@ -285,6 +289,155 @@ def plot_bias_vs_size(args, random=False):
         plt.ylabel('Proportion of Shape Decisions', fontsize=10)
         x1, x2, y1, y2 = plt.axis()
         plt.axis((x1, x2, 0, 1))
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        if alignment == '-unaligned':
+            plt.legend([handles[idx] for idx in i_range],
+                       [labels[idx] for idx in i_range],
+                       prop={'size': 8})
+        else:
+            plt.legend([handles[idx] for idx in i_range],
+                       [labels[idx] for idx in i_range2],
+                       prop={'size': 8})
+
+        if random:
+            plt.savefig('{0}/random_bias_vs_size_{1}_{2}.png'.format(plot_dir, sim_dir,
+                                                                     alignment[1:]))
+        else:
+            plt.savefig('{0}/bias_vs_size_{1}_{2}.png'.format(plot_dir, sim_dir,
+                                                              alignment[1:]))
+
+
+def plot_bg_match_bar_charts(args, random=False):
+    palette = sns.color_palette("hls", 8)
+    labels = ['Shape Bias', 'Texture Bias', 'Background Bias', 'Original Shape Bias']
+    model_labels = ['ResNet-50', 'ResNet-50 (Random)', 'ViT-B/16', 'ViT-B/16 (Random)',
+              'DINO ResNet-50', 'CLIP ViT-B/16', 'SAYCam-S']
+
+    if random:
+        model_list = ['{0}_{1}'.format(args.model, i) for i in range(1, args.N + 1)]
+        model_list.insert(0, args.model)
+
+        colors = ['#9c9c9c' for i in range(args.N)]
+        colors.insert(0, '#16a1d9')
+
+        labels = [str(i) for i in range(1, args.N + 1)]
+        labels.insert(0, 'Average')
+
+        plot_alphas = [0.4 for i in range(args.N)]
+        plot_alphas.insert(0, (1))
+    else:
+        model_list = get_model_list()
+
+    if args.novel:
+        sim_dir = 'novel'
+    else:
+        sim_dir = 'geirhos'
+
+    if args.classification:
+        class_str = 'classifications/'
+    else:
+        class_str = ''
+
+    blur = args.blur
+    if blur == 0:
+        blur_str = ''
+    else:
+        blur_str = '_{0}'.format(blur)
+
+    bg_str = 'bg_match{}/'.format(blur_str)
+
+    alignments = ['-unaligned', '-aligned']
+    alignment_labels = ['Unaligned Shape', 'Aligned Shape']
+
+    percent_ints = [20, 40, 60, 80, 100]
+
+    if random:
+        if args.bg:
+            bg_str_temp = bg_str[:-1]
+        else:
+            bg_str_temp = bg_str
+
+        plot_dir = 'figures/{0}/{1}{2}'.format(args.model, class_str, bg_str_temp[:-1])
+    elif not args.all_models:  # For now, this only works for models in model_list
+        idx = model_list.index(args.model)
+        model_list = [model_list[idx]]
+
+        if args.bg:
+            bg_str_temp = bg_str[:-1]
+        else:
+            bg_str_temp = bg_str
+
+        plot_dir = 'figures/{0}/{1}{2}'.format(args.model, class_str, bg_str_temp[:-1])
+    else:
+        if args.bg:
+            bg_str_temp = bg_str[:-1]
+        else:
+            bg_str_temp = bg_str
+
+        plot_dir = 'figures/{0}{1}'.format(class_str, bg_str_temp)
+
+    model_dict = {key: {a: {"20": 0, "40": 0, "60": 0, "80": 0, "100": 0}
+                        for a in alignments}
+                  for key in labels}
+
+    for i in range(len(model_list)):
+        model = model_list[i]
+
+        for a in range(len(alignments)):
+            alignment = alignments[a]
+
+            for s in range(len(percent_ints)):
+                size = percent_ints[s]
+
+                prop_dir = 'results/{0}/{1}{2}{3}-alpha1-size{4}{5}/' \
+                           'proportions_avg.csv'.format(model, class_str, bg_str,
+                                                        sim_dir, size, alignment)
+                prop_dir_2 = 'results/{0}/{1}{2}{3}-alpha1-size{4}{5}/' \
+                           'proportions_avg.csv'.format(model, class_str, '',
+                                                        sim_dir, size, alignment)
+
+                props = pd.read_csv(prop_dir)
+                props2 = pd.read_csv(prop_dir_2)
+                shape_bias = props.at[0, 'Shape Match Closer']
+                texture_bias = props.at[0, 'Texture Match Closer']
+                bg_bias = props.at[0, 'BG Match Closer']
+                og_shape_bias = props2.at[0, 'Shape Match Closer']
+                model_dict['Shape Bias'][alignment][str(size)] = shape_bias
+                model_dict['Texture Bias'][alignment][str(size)] = texture_bias
+                model_dict['Background Bias'][alignment][str(size)] = bg_bias
+                model_dict['Original Shape Bias'][alignment][str(size)] = og_shape_bias
+
+    for a in range(len(alignments)):
+        plt.clf()
+        plt.axhline(0.5, color='#808080', linestyle=(0, (1, 3)))  # Chance line
+
+        alignment = alignments[a]
+        label = alignment_labels[a]
+
+        i_range = [0, 1, 2]  # ToDo: replace this once bug is fixed
+        colors = [0, 3, 7]
+
+        for i in i_range:
+            plt.plot(percent_ints, list(model_dict[labels[i]][alignment].values()),
+                         label=labels[i], color=palette[colors[i]], linestyle='solid',
+                         marker='o', markersize=7.5, markeredgecolor='black',
+                         markeredgewidth=0.5, markerfacecolor=palette[i])
+
+        plt.plot(percent_ints, list(model_dict['Original Shape Bias'][alignment].values()),
+                 label=labels[3], color=palette[0], linestyle='dashed',
+                 marker='o', markersize=7.5, markeredgecolor='black',
+                 markeredgewidth=0.5, markerfacecolor=palette[0], alpha=0.5)
+
+        plt.xticks(ticks=percent_ints)
+        plt.title("{0} Stimuli, {1}".format(sim_dir.capitalize(), label))
+        plt.xlabel('Percent of Original Size', fontsize=10)
+        plt.ylabel('Proportion', fontsize=10)
+        x1, x2, y1, y2 = plt.axis()
+        plt.axis((x1, x2, 0, 1))
+
+        i_range = [0, 1, 2, 3]
+        i_range2 = [0, 1, 2, 3]
 
         handles, labels = plt.gca().get_legend_handles_labels()
         if alignment == '-unaligned':

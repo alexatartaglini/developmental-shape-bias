@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from data import SilhouetteTriplets
 from plot import make_plots
-from evaluate import calculate_similarity_totals, csv_class_values, calculate_totals, calculate_proportions, get_num_draws
+from evaluate import *
 import clip
 import probabilities_to_decision
 from random import sample, choice
@@ -88,7 +88,7 @@ def new_seed(args, stimuli_dir):
         json.dump(selections, file)
 
 
-def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1):
+def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, replace=False, n=-1):
     """ Retrieves embeddings for each image in a dataset from the penultimate
     layer of a given model. Stores the embeddings in a dictionary (indexed by
     image name, eg. cat4-truck3). Returns the dictionary and stores it in a json
@@ -100,6 +100,7 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
     :param penult_model: the model with the last layer removed.
     :param transform: appropriate transforms for the given model (should match training
         data stats)
+    :param replace: True if existing embeddings should be replaced.
     :param n: for use when model_type = resnet50_random or ViTB16_random. Specifies
               which particular random model to use.
 
@@ -112,6 +113,7 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
         model_type = '{0}_{1}'.format(model_type, n)
 
     bg = args.bg
+    blur = args.blur
 
     try:
         os.mkdir('embeddings')
@@ -123,11 +125,16 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=-1)
     except FileExistsError:
         pass
 
+    if blur == 0:
+        blur_str = ''
+    else:
+        blur_str = '_{0}'.format(str(blur))
+
     if bg:
         if '/' in bg:
             bg = bg.split('/')[-1]
 
-        bg_str = 'background_{0}'.format(bg[:-4])
+        bg_str = 'background_{0}{1}'.format(bg[:-4], blur_str)
 
         try:
             os.mkdir('embeddings/{0}/{1}'.format(model_type, bg_str))
@@ -250,17 +257,24 @@ def get_icon_embeddings(model_type, penult_model, transform, n=-1):
 
 
 def bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform, n=-1):
+
     bgs = glob.glob('{0}/*.png'.format(args.bg_match))
     bg_info = {}
+    blur = args.blur
+
+    if blur == 0:
+        blur_str = ''
+    else:
+        blur_str = '_{0}'.format(str(blur))
 
     for bg in bgs:
         bg_name = bg.split('/')[-1][:-4]
         bg_info[bg] = [bg_name]
-        bg_dir = 'stimuli/background_{0}'.format(bg_name)
+        bg_dir = 'stimuli/background_{0}{1}'.format(bg_name, blur_str)
 
         if not os.path.exists(bg_dir) or not os.listdir(bg_dir):
             args.bg = bg
-            stimuli_dir_bg = 'background_{0}/{1}'.format(bg_name, stimuli_dir)
+            stimuli_dir_bg = 'background_{0}{1}/{2}'.format(bg_name, blur_str, stimuli_dir.split('/')[-1])
 
             try:
                 os.mkdir(bg_dir)
@@ -300,6 +314,15 @@ def bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform,
             anchor_bgs = []
 
             for t in anchor_triplets:
+                if args.novel:
+                    bg_match_stim = '{0}-{1}.png'.format(shape_classes[t[2]]['shape'],
+                                                         shape_classes[t[1]]['texture'])
+                else:
+                    bg_match_stim = '{0}-{1}.png'.format(shape_classes[t[2]]['shape_spec'],
+                                                     shape_classes[t[1]]['texture_spec'])
+                    if bg_match_stim not in shape_classes.keys():
+                        continue
+
                 if bg_counter == len(bgs):
                     bg_counter = 0
 
@@ -320,12 +343,6 @@ def bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform,
                 anchor_bgs.append(bg_list)
                 all_bgs.append(bg_list)
 
-                if args.novel:
-                    bg_match_stim = '{0}-{1}.png'.format(shape_classes[t[2]]['shape'],
-                                                         shape_classes[t[1]]['texture'])
-                else:
-                    bg_match_stim = '{0}-{1}.png'.format(shape_classes[t[2]]['shape_spec'],
-                                                     shape_classes[t[1]]['texture_spec'])
                 quadruplet = [t[0], t[1], t[2], bg_match_stim]
                 anchor_quadruplets.append(quadruplet)
                 all.append(quadruplet)
@@ -346,10 +363,12 @@ def bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform,
 
     for bg in bgs:
         args.bg = bg
-        bg_embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform)
+        bg_str = 'background_{0}{1}'.format(bg.split('/')[-1][:-4], blur_str)
+        bg_embeddings = get_embeddings(args, '{0}/{1}'.format(bg_str, stimuli_dir.split('/')[-1]),
+                                       model_type, penult_model, transform, n=n)
         embeddings_by_bg[bg] = bg_embeddings
 
-    dataset = SilhouetteTriplets(args, stimuli_dir, None)
+    dataset = SilhouetteTriplets(args, stimuli_dir.split('/')[-1], None)
 
     images = dataset.shape_classes.keys()
     results = {key: None for key in images}  # a dictionary of anchor name to dataframe mappings
@@ -394,9 +413,11 @@ def bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform,
                 texture_match = quadruplet[2]
                 bg_match = quadruplet[3]
 
-                anchor_bg = bgs[0]
-                shape_bg = bgs[1]
-                texture_bg = bgs[2]
+                qlet_bgs = bgs[i]
+
+                anchor_bg = qlet_bgs[0]
+                shape_bg = qlet_bgs[1]
+                texture_bg = qlet_bgs[2]
 
                 df.at[i + step, 'Shape Match'] = shape_match[:-4]
                 df.at[i + step, 'Texture Match'] = texture_match[:-4]
@@ -724,6 +745,12 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
     icons = args.icons
     bg = args.bg
     bg_match = args.bg_match
+    blur = args.blur
+
+    if blur == 0:
+        blur_str = ''
+    else:
+        blur_str = '_{0}'.format(str(blur))
 
     clip_list = ['clipViTB16']
 
@@ -745,8 +772,6 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             os.mkdir('results/{0}/icons'.format(model_type))
         except FileExistsError:
             pass
-    elif bg_match:
-        class_str = 'bg_match/{0}/'.format(bg_match.split('/')[-1])
     else:
         class_str = ''
 
@@ -754,7 +779,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
         if '/' in bg:
             bg = bg.split('/')[-1]
 
-        bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
+        bg_str = '{0}background_{1}{2}'.format(class_str, bg[:-4], blur_str)
 
         try:
             os.mkdir('results/{0}/{1}'.format(model_type, bg_str))
@@ -762,12 +787,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             pass
     elif bg_match:
         try:
-            os.mkdir('results/{0}/bg_match'.format(model_type))
-        except FileExistsError:
-            pass
-
-        try:
-            os.mkdir('results/{0}/bg_match/{1}'.format(model_type, bg_match.split('/')[-1]))
+            os.mkdir('results/{0}/bg_match{1}'.format(model_type, blur_str))
         except FileExistsError:
             pass
 
@@ -806,21 +826,14 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
     elif bg_match:
         if args.all_models:
             try:
-                os.mkdir('figures/bg_match')
+                os.mkdir('figures/bg_match{0}'.format(blur_str))
             except FileExistsError:
                 pass
-            bg_match_str = 'figures/bg_match/{0}'.format(bg_match.split('/')[-1])
         else:
             try:
-                os.mkdir('figures/{0}/bg_match'.format(model_type))
+                os.mkdir('figures/{0}/bg_match{1}'.format(model_type, blur_str))
             except FileExistsError:
                 pass
-            bg_match_str = 'figures/{0}/bg_match/{1}'.format(model_type, bg_match.split('/')[-1])
-
-        try:
-            os.mkdir(bg_match_str)
-        except FileExistsError:
-            pass
     else:
         class_str = ''
 
@@ -828,7 +841,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
         if '/' in bg:
             bg = bg.split('/')[-1]
 
-        bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
+        bg_str = '{0}background_{1}{2}'.format(class_str, bg[:-4], blur_str)
 
         try:
             os.mkdir('figures/{0}/{1}'.format(model_type, bg_str))
@@ -874,12 +887,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
                 pass
         elif bg_match:
             try:
-                os.mkdir('results/{0}/bg_match'.format(model_type))
-            except FileExistsError:
-                pass
-
-            try:
-                os.mkdir('results/{0}/bg_match/{1}'.format(model_type, bg_match.split('/')[-1]))
+                os.mkdir('results/{0}/bg_match{1}'.format(model_type, blur_str))
             except FileExistsError:
                 pass
         else:
@@ -889,7 +897,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             if '/' in bg:
                 bg = bg.split('/')[-1]
 
-            bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
+            bg_str = '{0}background_{1}{2}'.format(class_str, bg[:-4], blur_str)
 
             try:
                 os.mkdir('results/{0}/{1}'.format(model_type, bg_str))
@@ -918,13 +926,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
                 pass
         elif bg_match:
             try:
-                os.mkdir('figures/{0}/bg_match'.format(model_type))
-            except FileExistsError:
-                pass
-            bg_match_str = 'figures/{0}/bg_match/{1}'.format(model_type, bg_match.split('/')[-1])
-
-            try:
-                os.mkdir(bg_match_str)
+                os.mkdir('figures/{0}/bg_match{1}'.format(model_type, blur_str))
             except FileExistsError:
                 pass
         else:
@@ -934,7 +936,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             if '/' in bg:
                 bg = bg.split('/')[-1]
 
-            bg_str = '{0}background_{1}'.format(class_str, bg[:-4])
+            bg_str = '{0}background_{1}{2}'.format(class_str, bg[:-4], blur_str)
 
             try:
                 os.mkdir('figures/{0}/{1}'.format(model_type, bg_str))
@@ -954,7 +956,8 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
         icon_embeddings = get_icon_embeddings(model_type, penult_model, transform, n=n)
 
     elif not classification and not bg_match:
-        embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform, n=n)
+        embeddings = get_embeddings(args, stimuli_dir, model_type, penult_model, transform,
+                                    replace=args.get_embeddings, n=n)
         if args.get_embeddings:
             return
         results = triplets(args, model_type, stimuli_dir, embeddings, n=n)
@@ -968,6 +971,7 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
             df.to_csv(path, index=False)
 
     elif bg_match:
+        print(model_type)
         results = bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform, n=n)
 
         for anchor in results.keys():
@@ -1070,6 +1074,7 @@ if __name__ == '__main__':
                                      'background.', required=False, default=None)
     parser.add_argument('--alpha', help='Transparency value for silhouette triplets. 1=no background texture info.'
                                         '0=original Geirhos stimuli.', default=1, type=float)
+    parser.add_argument('--blur', help='Radius for Gaussian blur to be applied to background.', default=0, type=float)
     parser.add_argument('--all_models', help='Generates plots, summaries, or results for all models.', required=False,
                         action='store_true')
     parser.add_argument('--new_seed', help='Generates a new collection of randomly selected triplets to use in the '
@@ -1084,9 +1089,7 @@ if __name__ == '__main__':
                                                  'stimulus set without running simulations.', required=False,
                         action='store_true', default=False)
     parser.add_argument('--bg_match', help='Runs simulations with (shape match, texture match, background match)'
-                                           'quadruplets. Enter path for folder with background images, eg.'
-                                           'stimuli/brodatz-textures.',
-                        default=None)
+                                           'quadruplets.', action='store_true', default=False)
     args = parser.parse_args()
 
     model = args.model
@@ -1098,25 +1101,28 @@ if __name__ == '__main__':
     novel = args.novel
     bg = args.bg
     alpha = args.alpha
+    blur = args.blur
     all_models = args.all_models
     new_seed = args.new_seed
     create_stimuli = args.create_stimuli
     calculate = args.calculate
     bg_match = args.bg_match
 
-    if args.bg_match:
-        args.bg = False
-
     N = args.N  # number of random models to test and average over
 
     assert not (novel and classification)
     assert not (bg_match and classification)
 
-    # Size/alignment/background should only be varied for alpha=1 stimuli.
-    if alpha != 1:
+    # Prevents weird things from happening with original Geirhos stimuli.
+    if alpha != 1 and not bg and not novel:
         percent_size = '100'
         unaligned = False
         bg = None
+
+    if blur == 0:
+        blur_str = ''
+    else:
+        blur_str = '_{0}'.format(str(blur))
 
     try:
         os.mkdir('results')
@@ -1137,7 +1143,7 @@ if __name__ == '__main__':
         if '/' in bg:
             bg = bg.split('/')[-1]
 
-        bg_str = 'background_{0}/'.format(bg[:-4])
+        bg_str = 'background_{0}{1}/'.format(bg[:-4], blur_str)
 
         try:
             os.mkdir('stimuli/{0}'.format(bg_str))
@@ -1152,7 +1158,7 @@ if __name__ == '__main__':
         bg_str = ''
 
     if bg_match:
-        bg_str = 'bg-match'
+        bg_str = 'bg_match{0}/'.format(blur_str)
 
     if novel:
         if unaligned:
@@ -1172,7 +1178,7 @@ if __name__ == '__main__':
         run_simulations(args, 'resnet50', stimuli_dir)
         make_plots(args)
     elif create_stimuli:
-        dataset = SilhouetteTriplets(args, stimuli_dir, None)
+        _ = SilhouetteTriplets(args, stimuli_dir, None, override=True)
     else:
         if all_models:
             for model_type in model_list:
@@ -1190,7 +1196,10 @@ if __name__ == '__main__':
                         run_simulations(args, model_type, stimuli_dir)
 
                 if not classification and not icons and not args.get_embeddings:
-                    calculate_similarity_totals(args, model_type, stimuli_dir, N=N)
+                    if bg_match:
+                        calculate_similarity_totals_bg_match(args, model_type, stimuli_dir, N=N)
+                    else:
+                        calculate_similarity_totals(args, model_type, stimuli_dir, N=N)
 
         else:
             if 'random' in model:
@@ -1199,10 +1208,16 @@ if __name__ == '__main__':
                     if not calculate:
                         run_simulations(args, model, stimuli_dir, n=i)
                     if not args.get_embeddings:
-                        calculate_similarity_totals(args, model, stimuli_dir, n=i)
+                        if bg_match:
+                            calculate_similarity_totals_bg_match(args, model, stimuli_dir, n=i)
+                        else:
+                            calculate_similarity_totals(args, model, stimuli_dir, n=i)
             else:
                 if not calculate:
                     run_simulations(args, model, stimuli_dir)
 
             if not classification and not args.get_embeddings:
-                calculate_similarity_totals(args, model, stimuli_dir, N=N)
+                if bg_match:
+                    calculate_similarity_totals_bg_match(args, model, stimuli_dir, N=N)
+                else:
+                    calculate_similarity_totals(args, model, stimuli_dir, N=N)

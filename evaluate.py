@@ -204,6 +204,10 @@ def calculate_similarity_totals(args, model_type, stimuli_dir, n=-1, N=0):
     :param N: total number of random models
     """
 
+    if args.bg_match:
+        calculate_similarity_totals_bg_match(args, model_type, stimuli_dir, n=-1, N=0)
+        return
+
     if args.novel:
         num_draws = 1
     else:
@@ -297,5 +301,97 @@ def calculate_similarity_totals(args, model_type, stimuli_dir, n=-1, N=0):
         results.at[i, 'Metric'] = metric
         results.at[i, 'Shape Match Closer'] = metric_results[0] / num_draws
         results.at[i, 'Texture Match Closer'] = metric_results[1] / num_draws
+
+    results.to_csv('{0}/proportions_avg.csv'.format(sim_dir), index=False)
+
+
+def calculate_similarity_totals_bg_match(args, model_type, stimuli_dir, n=-1, N=0):
+    if args.novel:
+        num_draws = 1
+    else:
+        num_draws = get_num_draws()
+
+    metrics = ['cos', 'dot', 'ed']
+
+    if 'random' in model_type and n != -1:
+        model_type = '{0}_{1}'.format(model_type, n)
+
+    dataset = SilhouetteTriplets(args, stimuli_dir.split('/')[-1], None)
+    sim_dir = 'results/{0}/{1}'.format(model_type, stimuli_dir)
+
+    # Values for dictionary below: [shape_closer, texture_closer]
+    results_by_metric_total = {key: [0, 0, 0] for key in metrics}
+
+    columns = ['Model', 'Metric', 'Shape Match Closer', 'Texture Match Closer', 'BG Match Closer']
+
+    results = pd.DataFrame(index=range(len(metrics)), columns=columns)
+    results.loc[:, 'Model'] = model_type
+
+    if 'random' in model_type and n == -1:  # Compute averages across random models
+        for i in range(1, N+1):
+            random_df = pd.read_csv('results/{0}_{1}/{2}/proportions_avg.csv'.format(model_type,
+                                                                                     i,
+                                                                                     stimuli_dir))
+            for index, row in random_df.iterrows():
+                metric = row['Metric']
+
+                shape_closer = row['Shape Match Closer']
+                texture_closer = row['Texture Match Closer']
+                bg_closer = row['BG Match Closer']
+
+                results_by_metric_total[metric][0] += shape_closer
+                results_by_metric_total[metric][1] += texture_closer
+                results_by_metric_total[metric][2] += bg_closer
+
+        for i in range(len(metrics)):
+            metric = metrics[i]
+            metric_results = results_by_metric_total[metric]  # [shape_closer, texture_closer, color_closer]
+
+            results.at[i, 'Metric'] = metric
+            results.at[i, 'Shape Match Closer'] = metric_results[0] / N
+            results.at[i, 'Texture Match Closer'] = metric_results[1] / N
+            results.at[i, 'BG Match Closer'] = metric_results[2] / N
+
+        results.to_csv('{0}/proportions_avg.csv'.format(sim_dir), index=False)
+        return
+
+    for random_draw in range(1):
+        num_rows = 0
+        results_by_metric = {key: [0, 0, 0] for key in metrics}
+
+        for file in glob.glob('{0}/*.csv'.format(sim_dir)):
+            if file == '{0}/averages.csv'.format(sim_dir) or file == '{0}/proportions.csv'.format(sim_dir)\
+                    or file == '{0}/matrix.csv'.format(sim_dir) or file == '{0}/proportions_avg.csv'.format(sim_dir)\
+                    or file == '{0}/proportions_OLD.csv'.format(sim_dir):
+                continue
+
+            df = pd.read_csv(file)
+
+            for index, row in df.iterrows():
+                metric = row['Metric']
+
+                shape_closer = int(row['Shape Match Closer'])
+                texture_closer = int(row['Texture Match Closer'])
+                bg_closer = int(row['BG Match Closer'])
+
+                results_by_metric[metric][0] += shape_closer
+                results_by_metric[metric][1] += texture_closer
+                results_by_metric[metric][2] += bg_closer
+
+                num_rows += 1
+
+        num_rows = num_rows // len(metrics)  # Each triplet appears len(metric) times.
+        for i in range(len(metrics)):
+            for j in range(3):
+                results_by_metric_total[metrics[i]][j] += results_by_metric[metrics[i]][j] / num_rows
+
+    for i in range(len(metrics)):
+        metric = metrics[i]
+        metric_results = results_by_metric_total[metric]  # [shape_closer, texture_closer, color_closer]
+
+        results.at[i, 'Metric'] = metric
+        results.at[i, 'Shape Match Closer'] = metric_results[0]
+        results.at[i, 'Texture Match Closer'] = metric_results[1]
+        results.at[i, 'BG Match Closer'] = metric_results[2] 
 
     results.to_csv('{0}/proportions_avg.csv'.format(sim_dir), index=False)
