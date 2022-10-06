@@ -18,6 +18,7 @@ import clip
 import probabilities_to_decision
 from random import sample, choice
 import glob
+from probe import run_probe
 logging.set_verbosity_error()  # Suppress warnings from Hugging Face
 
 
@@ -1065,6 +1066,8 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument('--icons', help='Compare input images to class icons provided by Geirhos et al.',
                         required=False, action='store_true')
+    parser.add_argument('--probe', help='Performs linear probe on model embeddings.',
+                        required=False, default=None)
     parser.add_argument('--percent_size', help='Controls the size of the stimuli.', required=False, default='100')
     parser.add_argument('--unaligned', help='Randomly place the stimuli. Otherwise, stimuli are placed'
                                             'in the center of the image.', required=False, action='store_true')
@@ -1096,6 +1099,7 @@ if __name__ == '__main__':
     plot = args.plot
     classification = args.classification
     icons = args.icons
+    probe = args.probe
     percent = args.percent_size
     unaligned = args.unaligned
     novel = args.novel
@@ -1177,6 +1181,47 @@ if __name__ == '__main__':
     if plot:
         run_simulations(args, 'resnet50', stimuli_dir)
         make_plots(args)
+    elif probe:
+        num_probes = 10
+        num_epochs = 100
+        num_layers = 1
+
+        for i in range(1, num_probes + 1):
+            run_probe(args, probe, num_epochs=num_epochs, num_probe_layers=num_layers, i=i)
+
+        result_dir = 'results/{0}/probe/{1}'.format(model, stimuli_dir)
+        columns = ['Probe', 'Number Probe Layers', 'Mode', 'Epoch', 'Train Loss', 'Train Acc',
+                   'Eval Loss', 'Eval Acc']
+        df = pd.DataFrame(index=range(num_epochs), columns=columns)
+        df['Probe'] = 'avg'
+        df['Number Probe Layers'] = num_layers
+        df['Mode'] = probe
+
+        results = []
+
+        for result_f in glob.glob('{0}/*{1}.csv'.format(result_dir, probe)):
+            results.append(pd.read_csv(result_f))
+
+        for epoch in range(num_epochs):
+            df.at[epoch, 'Epoch'] = epoch + 1
+            train_loss = []
+            train_acc = []
+            eval_loss = []
+            eval_acc = []
+
+            for result in results:
+                train_loss.append(result.at[epoch, 'Train Loss'])
+                train_acc.append(result.at[epoch, 'Train Acc'])
+                eval_loss.append(result.at[epoch, 'Eval Loss'])
+                eval_acc.append(result.at[epoch, 'Eval Acc'])
+
+            df.at[epoch, 'Train Loss'] = np.sum(train_loss) / num_probes
+            df.at[epoch, 'Train Acc'] = np.sum(train_acc) / num_probes
+            df.at[epoch, 'Eval Loss'] = np.sum(eval_loss) / num_probes
+            df.at[epoch, 'Eval Acc'] = np.sum(eval_acc) / num_probes
+
+        df.to_csv('{0}/avg_{1}_{2}.csv'.format(result_dir, num_layers, probe), index=False)
+
     elif create_stimuli:
         _ = SilhouetteTriplets(args, stimuli_dir, None, override=True)
     else:
