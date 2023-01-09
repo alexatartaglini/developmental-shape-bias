@@ -29,7 +29,8 @@ class SilhouetteTriplets(Dataset):
     This class can also generate stimuli with any alpha, size, or background setting.
     """
 
-    def __init__(self, args, stimuli_dir, transform, displace_bg=False, override=False):
+    def __init__(self, args, stimuli_dir, transform, displace_bg=False, override=False,
+                 num_triplets='max'):
         """Generates/loads the triplets. all_triplets is a list of all 3-tuples.
         triplets_by_image is a dictionary; the keys are image names, and it stores all
         shape/texture matches plus all possible triplets for a given image (as the anchor).
@@ -42,6 +43,10 @@ class SilhouetteTriplets(Dataset):
         :param displace_bg: randomly select a patch of the background image to serve as the
                             stimulus background. If False, the entire image is used.
         :param override: if True, will replace the stimuli that already exist.
+        :param num_triplets: if max, use maximum number of possible triplets per anchor such
+                             that each anchor is equally represented (see max_num_triplets).
+                             if int < max_num_triplets, the number of triplets per anchor is
+                             capped at this.
         """
         self.shape_classes = {}
         self.all_triplets = []
@@ -68,8 +73,7 @@ class SilhouetteTriplets(Dataset):
         else:
             self.displace_bg = displace_bg
         self.override = override
-
-        shape_dir = 'stimuli/{0}'.format(self.stimuli_dir)
+        self.num_triplets = num_triplets
 
         # Create/load dictionaries containing shape and texture classifications for each image
         if self.novel:
@@ -240,17 +244,18 @@ class SilhouetteTriplets(Dataset):
 
             if self.bg:
                 if self.displace_bg:
-                    bg = Image.open(self.bg).convert('RGB').resize((mask.size[0] * 2, mask.size[0] * 2), Image.NEAREST)
+                    bg = Image.open(self.bg).convert('RGBA').resize((mask.size[0] * 2, mask.size[0] * 2), Image.NEAREST)
                     x = randint(0, 224)
                     y = randint(0, 224)
                     bg = bg.crop((x, y, x + mask.size[0], y + mask.size[0])).filter(ImageFilter.SHARPEN)
                 else:
-                    bg = Image.open(self.bg).convert('RGB').resize((224, 224), Image.NEAREST)
+                    bg = Image.open(self.bg).convert('RGBA').resize((224, 224), Image.NEAREST)
+                bg.putalpha(255 - self.alpha)
 
                 if self.blur != 0:
                     bg = bg.filter(ImageFilter.GaussianBlur(radius=self.blur))
             else:
-                bg = Image.new('RGB', (224, 224), (255, 255, 255))
+                bg = Image.new('RGBA', (224, 224), (255, 255, 255, 255-self.alpha))
 
             if self.novel:
                 texture_path = 'stimuli/brodatz-textures/{0}.png'.format(self.shape_classes[im_name]['texture'])
@@ -270,7 +275,7 @@ class SilhouetteTriplets(Dataset):
                     if item[0] == 0 and item[1] == 0 and item[2] == 0:
                         new_data.append(item)
                     else:
-                        new_data.append((0, 0, 0, 255 - self.alpha))
+                        new_data.append((0, 0, 0, 0))
 
                 mask.putdata(new_data)
 
@@ -321,7 +326,7 @@ class SilhouetteTriplets(Dataset):
                     if item[0] == 0 and item[1] == 0 and item[2] == 0:
                         new_data.append(item)
                     else:
-                        new_data.append((0, 0, 0, 255 - self.alpha))
+                        new_data.append((0, 0, 0, 0))
 
                 mask.putdata(new_data)
 
@@ -388,17 +393,32 @@ class SilhouetteTriplets(Dataset):
         texture_path = '{0}/{1}/{2}'.format(s_dir, self.shape_classes[triplet[2]]['shape'], triplet[2])
 
         # Load images
-        anchor_im = Image.open(anchor_path)
-        shape_im = Image.open(shape_path)
-        texture_im = Image.open(texture_path)
+        anchor_im = Image.open(anchor_path).convert('RGB')
+        shape_im = Image.open(shape_path).convert('RGB')
+        texture_im = Image.open(texture_path).convert('RGB')
 
         # Apply transforms
         if self.transform:
-            anchor_im = self.transform(anchor_im)
-            shape_im = self.transform(shape_im)
-            texture_im = self.transform(texture_im)
+            if type(self.transform) == transformers.models.vit.feature_extraction_vit.ViTFeatureExtractor:
+                anchor_im = self.transform(images=anchor_im, return_tensors="pt")
+                anchor_im['pixel_values'] = anchor_im['pixel_values'].unsqueeze(0)
 
-        return anchor_im.unsqueeze(0), shape_im.unsqueeze(0), texture_im.unsqueeze(0)
+                shape_im = self.transform(images=shape_im, return_tensors="pt")
+                shape_im['pixel_values'] = shape_im['pixel_values'].unsqueeze(0)
+
+                texture_im = self.transform(images=texture_im, return_tensors="pt")
+                texture_im['pixel_values'] = texture_im['pixel_values'].unsqueeze(0)
+            else:
+                anchor_im = self.transform(anchor_im)
+                anchor_im = anchor_im.unsqueeze(0)
+
+                shape_im = self.transform(shape_im)
+                shape_im = shape_im.unsqueeze(0)
+
+                texture_im = self.transform(texture_im)
+                texture_im = texture_im.unsqueeze(0)
+
+        return anchor_im, shape_im, texture_im
 
     def max_num_triplets(self):
         """This method returns the minimum number of triplets that an anchor image
@@ -421,10 +441,10 @@ class SilhouetteTriplets(Dataset):
         return min_triplets
 
     def select_capped_triplets(self, draw):
-        """This method randomly selects min_triplets (see max_num_triplets) triplets for
-        each anchor image and inserts these into a dictionary indexed by anchor image.
-        This allows one to evaluate a set of triplets such that no anchor image is
-        overrepresented.
+        """This method randomly selects min_triplets (see max_num_triplets) triplets or
+        num_triplets < min_triplets for each anchor image and inserts these into a
+        dictionary indexed by anchor image. This allows one to evaluate a set of triplets
+        such that no anchor image is overrepresented.
 
         :param draw: the random draw to choose from the seed.json file (ensures all
                      models view the same random selection)
@@ -433,9 +453,9 @@ class SilhouetteTriplets(Dataset):
                  each anchor image has an equal number of triplets."""
 
         if self.novel:
-            selections = json.load(open('novel_seed.json'))
+            selections = json.load(open('novel_seed{}.json'.format(self.num_triplets)))
         else:
-            selections = json.load(open('seed.json'))
+            selections = json.load(open('seed{}.json'.format(self.num_triplets)))
 
         return selections[str(draw)]
 
