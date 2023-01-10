@@ -1,6 +1,0 @@
-Proportion of shape decisions (disregarding 'neither' decisions): 0.22152690863579474
-Proportion of texture decisions (disregarding 'neither' decisions): 0.7784730913642053
-Proportion of shape decisions (including 'neither' decisions): 0.1475
-Proportion of texture decisions (including 'neither' decisions): 0.5183333333333333
-Proportion of shape decisions (restricted to only shape/texture classes): 0.19583333333333333
-Proportion of texture decisions (restricted to only shape/texture classes): 0.8041666666666667
