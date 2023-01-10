@@ -55,23 +55,28 @@ class SilhouetteTriplets(Dataset):
         self.bg = args.bg
         self.novel = args.novel
         self.alpha = int(args.alpha * 255)
-        if args.alpha == 1:
-            self.alpha_str = '1'
+        
+        if args.alpha == 1 or args.alpha == 0:
+            self.alpha_str = str(int(args.alpha))
         else:
             self.alpha_str = str(args.alpha)
+            
         self.blur = args.blur
         if self.blur == 0:
             self.blur_str = ''
         else:
             self.blur_str = '_{0}'.format(str(self.blur))
+            
         self.stimuli_dir = stimuli_dir
         self.percent = args.percent_size
         self.stimulus_size = sizes[percents.index(self.percent)]
         self.unaligned = args.unaligned
+        
         if self.bg and ('brodatz' in self.bg or 'saycam' in self.bg):
             self.displace_bg = True
         else:
             self.displace_bg = displace_bg
+            
         self.override = override
         self.num_triplets = num_triplets
 
@@ -147,7 +152,7 @@ class SilhouetteTriplets(Dataset):
 
             except FileNotFoundError:
                 # Create dictionary
-                for image_dir in glob.glob('stimuli/geirhos-alpha0.0-size100-aligned/*/*.png'):
+                for image_dir in glob.glob('stimuli/geirhos-alpha0-size100-aligned/*/*.png'):
                     image = image_dir.split('/')
                     shape = image[2]  # Shape class of image
                     texture_spec = image[3].split('-')[1].replace('.png', '')  # Specific texture instance, eg. clock2

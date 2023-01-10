@@ -29,7 +29,12 @@ logging.set_verbosity_error()  # Suppress warnings from Hugging Face
 model_list = ['resnet50', 'resnet50_random', 'ViTB16', 'ViTB16_random',
               'dino_resnet50', 'clipViTB16', 'saycamS']
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+if torch.cuda.is_available():
+    device = torch.device('cuda')
+elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+    device = torch.device('mps')
+else:
+    device = torch.device('cpu')
 
 
 class LinearClassifier(nn.Module):
@@ -790,7 +795,7 @@ def initialize_model(model_type, n=-1):
 
     # These are the ImageNet transforms; most models will use these, but a few redefine them
     transform = transforms.Compose([
-        transforms.Scale(224),
+        transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
@@ -1362,13 +1367,16 @@ if __name__ == '__main__':
     assert not (novel and classification)
     assert not (bg_match and classification)
 
-    args.unaligned = True
-    unaligned = True
 
     if blur == 0:
         blur_str = ''
     else:
         blur_str = '_{0}'.format(str(blur))
+        
+    if alpha == 1 or alpha == 0:
+        alpha_str = str(int(alpha))
+    else:
+        alpha_str = str(alpha)
 
     try:
         os.mkdir('results')
@@ -1411,15 +1419,29 @@ if __name__ == '__main__':
 
     if novel:
         if unaligned:
-            stimuli_dir = '{0}novel-alpha{1}-size{2}-unaligned'.format(bg_str, alpha, percent)
+            stimuli_dir = '{0}novel-alpha{1}-size{2}-unaligned'.format(bg_str, alpha_str, percent)
         else:
-            stimuli_dir = '{0}novel-alpha{1}-size{2}-aligned'.format(bg_str, alpha, percent)
+            stimuli_dir = '{0}novel-alpha{1}-size{2}-aligned'.format(bg_str, alpha_str, percent)
     else:
         if unaligned:
-            stimuli_dir = '{0}geirhos-alpha{1}-size{2}-unaligned'.format(bg_str, alpha, percent)
+            stimuli_dir = '{0}geirhos-alpha{1}-size{2}-unaligned'.format(bg_str, alpha_str, percent)
         else:
-            stimuli_dir = '{0}geirhos-alpha{1}-size{2}-aligned'.format(bg_str, alpha, percent)
+            stimuli_dir = '{0}geirhos-alpha{1}-size{2}-aligned'.format(bg_str, alpha_str, percent)
 
+    model, penult_model, transform = initialize_model('resnet50')
+    dataset = SilhouetteTriplets(args, stimuli_dir, transform)
+    print(len(dataset))
+    
+    #data_loader = DataLoader(dataset, batch_size=64, shuffle=True)
+
+    #with torch.no_grad():
+        #print('?')
+        # Iterate over images
+        #for idx, batch in enumerate(data_loader):
+            #print('{}: {}'.format(idx, batch.shape))
+    
+    
+    '''
     print(stimuli_dir)
     if novel:
         seed_path = 'novel_seed{}.json'.format(num_triplets)
@@ -1517,3 +1539,4 @@ if __name__ == '__main__':
                     calculate_similarity_totals_bg_match(args, model, stimuli_dir, N=N)
                 else:
                     calculate_similarity_totals(args, model, stimuli_dir, N=N)
+    '''
