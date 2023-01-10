@@ -123,6 +123,7 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, repla
 
     bg = args.bg
     blur = args.blur
+    batch_size = args.batch_size
 
     try:
         os.mkdir('embeddings')
@@ -153,42 +154,42 @@ def get_embeddings(args, stimuli_dir, model_type, penult_model, transform, repla
     embedding_dir = 'embeddings/{0}/{1}.json'.format(model_type, stimuli_dir)
 
     try:
-        embeddings = json.load(open(embedding_dir))
-        return embeddings
+        embedding_dict = json.load(open(embedding_dir))
+        return embedding_dict
 
     except FileNotFoundError:  # Retrieve and store embeddings
         # Initialize dictionary
-        embeddings = {}
+        embedding_dict = {}
 
         dataset = SilhouetteTriplets(args, stimuli_dir, transform)
-        data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
         with torch.no_grad():
             # Iterate over images
             for idx, batch in enumerate(data_loader):
-                im = batch[0]
-                name = batch[1][0]
+                ims = batch[0]
+                names = batch[1]
 
                 # Pass image into model
                 if model_type == 'clipViTB16':
-                    embedding = penult_model.encode_image(im.to(device))
-                    #embedding = embedding.cpu()
-                    embedding /= embedding.norm(dim=-1, keepdim=True)  # normalize the embedding
+                    embeddings = penult_model.encode_image(ims.to(device))
+                    embeddings /= embeddings.norm(dim=1, keepdim=True)  # normalize the embedding
                 elif model_type == 'ViTB16' or 'ViTB16_random' in model_type:
-                    im['pixel_values'] = im['pixel_values'].to(device).squeeze(0)
-                    outputs = penult_model(**im)
-                    embedding = outputs.last_hidden_state.squeeze(0)[0, :]#.cpu()
+                    ims['pixel_values'] = ims['pixel_values'].to(device).squeeze(1)
+                    outputs = penult_model(**ims)
+                    embeddings = outputs.last_hidden_state[:, 0, :]  # CLS token
                 else:
-                    embedding = penult_model(im.to(device))
-                    #embedding = embedding.cpu().numpy().squeeze()
-                    embedding = torch.squeeze(embedding)
-
-                embeddings[name] = embedding.tolist()
+                    embeddings = penult_model(ims.to(device))
+                    embeddings = torch.squeeze(embeddings)
+                
+                for i in range(embeddings.shape[0]):
+                    # detach each embedding to store as JSON
+                    embedding_dict[names[i]] = embeddings[i, :].tolist()
 
         with open(embedding_dir, 'w') as file:
-            json.dump(embeddings, file)
+            json.dump(embedding_dict, file)
 
-        return embeddings
+        return embedding_dict
 
 
 def get_icon_embeddings(model_type, penult_model, transform, n=-1):
@@ -1341,6 +1342,7 @@ if __name__ == '__main__':
                         type=int)
     parser.add_argument('--random_bg', help='Run simulations with randomly selected backgrounds for each triplet taken '
                                             'from the given directory.', default=None, required=False)
+    parser.add_argument('--batch_size', help='Size of batch to use if obtaining model embeddings.', default=64)
     args = parser.parse_args()
 
     model = args.model
@@ -1427,22 +1429,7 @@ if __name__ == '__main__':
             stimuli_dir = '{0}geirhos-alpha{1}-size{2}-unaligned'.format(bg_str, alpha_str, percent)
         else:
             stimuli_dir = '{0}geirhos-alpha{1}-size{2}-aligned'.format(bg_str, alpha_str, percent)
-
-    model, penult_model, transform = initialize_model('resnet50')
-    dataset = SilhouetteTriplets(args, stimuli_dir, transform)
-    print(len(dataset))
     
-    #data_loader = DataLoader(dataset, batch_size=64, shuffle=True)
-
-    #with torch.no_grad():
-        #print('?')
-        # Iterate over images
-        #for idx, batch in enumerate(data_loader):
-            #print('{}: {}'.format(idx, batch.shape))
-    
-    
-    '''
-    print(stimuli_dir)
     if novel:
         seed_path = 'novel_seed{}.json'.format(num_triplets)
     else:
@@ -1539,4 +1526,3 @@ if __name__ == '__main__':
                     calculate_similarity_totals_bg_match(args, model, stimuli_dir, N=N)
                 else:
                     calculate_similarity_totals(args, model, stimuli_dir, N=N)
-    '''
