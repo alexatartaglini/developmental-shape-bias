@@ -496,33 +496,41 @@ def bg_match_simulations(args, stimuli_dir, model_type, penult_model, transform,
 
 
 def random_bg_simulations(args, stimuli_dir, model_type, penult_model, transform, n=-1):
-
-    bgs = glob.glob('{0}/*.png'.format(args.random_bg)) + glob.glob('{0}/*.jpg'.format(args.random_bg))
-    bg_info = {}
     blur = args.blur
-
-    print('\trandom_bg_simulations: {}'.format(stimuli_dir))
-
     if blur == 0:
         blur_str = ''
     else:
         blur_str = '_{0}'.format(str(blur))
-
-    for bg in bgs:
-        bg_name = bg.split('/')[-1][:-4]
-        bg_info[bg] = [bg_name]
-        bg_dir = 'stimuli/background_{0}{1}'.format(bg_name, blur_str)
-
-        args.bg = bg
-        stimuli_dir_bg = 'background_{0}{1}/{2}'.format(bg_name, blur_str, stimuli_dir.split('/')[-1])
-
-        try:
-            os.mkdir('stimuli/background_{0}{1}'.format(bg_name, blur_str))
-        except FileExistsError:
-            pass
-
-        s = SilhouetteTriplets(args, stimuli_dir_bg, transform)  # Creates the stimuli
-        bg_info[bg].append(s)
+        
+    bg_info = {}
+    embedding_dict = {}
+    
+    if alpha != 1:
+        bgs = glob.glob('{0}/*.png'.format(args.random_bg)) + glob.glob('{0}/*.jpg'.format(args.random_bg))
+    
+        for bg in bgs:
+            bg_name = bg.split('/')[-1][:-4]
+            bg_info[bg] = [bg_name]
+            bg_dir = 'stimuli/background_{0}{1}'.format(bg_name, blur_str)
+    
+            args.bg = bg
+            stimuli_dir_bg = 'background_{0}{1}/{2}'.format(bg_name, blur_str, stimuli_dir.split('/')[-1])
+    
+            try:
+                os.mkdir('stimuli/background_{0}{1}'.format(bg_name, blur_str))
+            except FileExistsError:
+                pass
+    
+            s = SilhouetteTriplets(args, stimuli_dir_bg, transform)  # Creates the stimuli
+            bg_info[bg].append(s)
+            
+            embeddings = get_embeddings(args, stimuli_dir_bg, model_type, penult_model, transform)  # embeddings
+            embedding_dict[bg] = embeddings
+    else:
+        bg_info['none'] = ['none', SilhouetteTriplets(args, stimuli_dir.split('/')[-1], transform)]
+        bgs = ['none']
+        embeddings = get_embeddings(args, stimuli_dir.split('/')[-1], model_type, penult_model, transform)
+        embedding_dict['none'] = embeddings
 
     # temporarily only get results for draw 0
     if args.novel:
@@ -546,14 +554,11 @@ def random_bg_simulations(args, stimuli_dir, model_type, penult_model, transform
     if 'random' in model_type:
         model_type = '{0}_{1}'.format(model_type, n)
 
-    seen_embeddings = {}
+    #seen_embeddings = {}
 
     for anchor in anchors:  # Iterate over possible anchor images
-        print('\t{}'.format(anchor))
         anchor_triplets = triplets[anchor]
-        print('\t{}'.format(anchor_triplets))
         num_triplets = len(anchor_triplets)
-        print('\t{}'.format(num_triplets))
 
         df = pd.DataFrame(index=range(num_triplets * len(metrics)), columns=columns)
         df['Anchor'] = anchor[:-4]
@@ -568,20 +573,21 @@ def random_bg_simulations(args, stimuli_dir, model_type, penult_model, transform
         metric_mult = 0  # Ensures correct placement of results
 
         for metric in metrics:  # Iterate over distance metrics
-            print('\t\t{}'.format(metric))
             step = metric_mult * num_triplets
 
             for i in range(num_triplets):  # Iterate over triplets
-                print('\t\t{}: {}'.format(metric, i))
                 df.at[i + step, 'Metric'] = metric
 
                 bg = choice(bgs)
                 df.at[i + step, 'BG'] = bg.split('/')[-1]
 
-                args.bg = bg
-                bg_str = 'background_{0}{1}'.format(bg.split('/')[-1][:-4], blur_str)
-                stimuli_dir_bg = '{0}/{1}'.format(bg_str, stimuli_dir.split('/')[-1])
-                embedding_dir = 'embeddings/{0}/{1}.json'.format(model_type, stimuli_dir_bg)
+                if bg != 'none':
+                    args.bg = bg
+                    bg_str = 'background_{0}{1}'.format(bg.split('/')[-1][:-4], blur_str)
+                    stimuli_dir_bg = '{0}/{1}'.format(bg_str, stimuli_dir.split('/')[-1])
+                    embedding_dir = 'embeddings/{0}/{1}.json'.format(model_type, stimuli_dir_bg)
+                else:
+                    embedding_dir = 'embeddings/{0}/{1}.json'.format(model_type, stimuli_dir)
 
                 triplet = anchor_triplets[i]
                 shape_match = triplet[1]
@@ -591,16 +597,18 @@ def random_bg_simulations(args, stimuli_dir, model_type, penult_model, transform
                 df.at[i + step, 'Texture Match'] = texture_match[:-4]
 
                 # Get image embeddings
+                embeddings = embedding_dict[bg]
+                
+                '''
                 if os.path.exists(embedding_dir):
                     print('\t\t load embeds: {}'.format(embedding_dir))
                     embeddings = json.load(open(embedding_dir))
                 else:
+                    print('\t\t have not seen {}'.format(embedding_dir))
                     embeddings = {im: None for im in triplet}
 
                     #d = SilhouetteTriplets(args, stimuli_dir_bg, transform)
                     d = bg_info[bg][-1]
-                    print('\t\td.bg: {}'.format(d.bg))
-                    print('\t\td.stimuli_dir: {}'.format(d.stimuli_dir))
                     triplet_ims = d.getitem(triplet)
 
                     for j in range(len(triplet)):
@@ -625,6 +633,7 @@ def random_bg_simulations(args, stimuli_dir, model_type, penult_model, transform
 
                             embeddings[triplet[j]] = embedding.tolist()
                             seen_embeddings[triplet[j]] = embeddings[triplet[j]]
+                '''
 
                 anchor_output = torch.FloatTensor(embeddings[anchor])
                 shape_output = torch.FloatTensor(embeddings[shape_match])
@@ -925,7 +934,6 @@ def run_simulations(args, model_type, stimuli_dir, n=-1):
     :param n: for use when model_type = resnet50_random or ViTB16_random. Specifies
               which particular random model to use."""
 
-    print(stimuli_dir)
     classification = args.classification
     icons = args.icons
     bg = args.bg
@@ -1321,7 +1329,7 @@ if __name__ == '__main__':
     parser.add_argument('--bg', help='Runs silhouette triplet simulations using stimuli with an image '
                                      'background.', required=False, default=None)
     parser.add_argument('--alpha', help='Transparency value for silhouette triplets. 1=no background texture info.'
-                                        '0=original Geirhos stimuli.', default=1, type=float)
+                                        '0=original Geirhos stimuli.', default=0, type=float)
     parser.add_argument('--blur', help='Radius for Gaussian blur to be applied to background.', default=0, type=float)
     parser.add_argument('--all_models', help='Generates plots, summaries, or results for all models.', required=False,
                         action='store_true')
@@ -1368,6 +1376,10 @@ if __name__ == '__main__':
 
     assert not (novel and classification)
     assert not (bg_match and classification)
+    
+    if alpha == 1 and bg:
+        bg = None
+        args.bg = None
 
 
     if blur == 0:
@@ -1431,9 +1443,15 @@ if __name__ == '__main__':
             stimuli_dir = '{0}geirhos-alpha{1}-size{2}-aligned'.format(bg_str, alpha_str, percent)
     
     if novel:
-        seed_path = 'novel_seed{}.json'.format(num_triplets)
+        if num_triplets:
+            seed_path = 'novel_seed{}.json'.format(num_triplets)
+        else:
+            seed_path = 'novel_seed.json'
     else:
-        seed_path = 'seed{}.json'.format(num_triplets)
+        if num_triplets:
+            seed_path = 'seed{}.json'.format(num_triplets)
+        else:
+            seed_path = 'seed.json'
 
     if new_seed or not os.path.exists(seed_path):
         create_new_seed(args, stimuli_dir)
